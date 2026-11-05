@@ -1,7 +1,9 @@
--- ZeroUI 1.0.1 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.2 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
+--
+-- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
 --
 --   local Library = _G.ZeroUI
 --   local win  = Library:CreateWindow({ title = "zero hub", subtitle = "v1", size = {822, 640} })
@@ -12,7 +14,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.1"
+local VERSION = "1.0.2"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -28,6 +30,7 @@ local function now() return tick() end
 
 local Library = {
     Version = VERSION, Windows = {}, Flags = {},
+    CustomThemes = {},
     Settings = { cursorOffset = { 0, 0 } },
     Opacity = 1, TextOutline = false, TextSize = 13, SizeDelta = 0, FontName = "UI",
     PresetName = "zero pink",
@@ -830,7 +833,7 @@ end
 -- theme / font API
 ----------------------------------------------------------------------
 function Library:SetTheme(name)
-    local p = PRESETS[name]
+    local p = PRESETS[name] or (type(name) == "string" and self.CustomThemes[name]) or nil
     if type(name) == "table" then p = name end
     if not p then return self end
     for _, k in ipairs(ROLE_LIST) do
@@ -2219,7 +2222,8 @@ function Window:ListConfigs()
     pcall(function()
         for _, p in ipairs(listfiles(self.folder or "ZeroUI")) do
             local n = string.match(string.gsub(p, "\\", "/"), "([^/]+)%.json$")
-            if n then out[#out + 1] = n end
+            -- theme store lives in the same folder: keep it out of the config list
+            if n and n ~= "__themes" then out[#out + 1] = n end
         end
     end)
     table.sort(out)
@@ -2271,14 +2275,76 @@ function Window:Unload()
 end
 
 ----------------------------------------------------------------------
+-- custom (named) themes
+----------------------------------------------------------------------
+local function themePath(self) return (self.folder or "ZeroUI") .. "/__themes.json" end
+
+function Window:_readThemes()
+    local ok, s = pcall(function() local p = themePath(self); if isfile(p) then return readfile(p) end end)
+    local d = ok and s and decode(s)
+    return type(d) == "table" and d or {}
+end
+function Window:_writeThemes(all)
+    ensureFolder(self.folder or "ZeroUI")
+    local s = encode(all)
+    if not s then return false end
+    return (pcall(writefile, themePath(self), s))
+end
+function Window:_loadThemes()
+    Library.CustomThemes = self:_readThemes()
+end
+function Window:ListThemes()
+    local out = {}
+    for n in pairs(Library.CustomThemes) do out[#out + 1] = n end
+    table.sort(out)
+    return out
+end
+-- saves the colours currently on screen under a name; returns ok, name-or-error
+function Window:SaveTheme(name)
+    name = string.gsub(tostring(name or ""), "^%s+", "")
+    name = string.gsub(name, "%s+$", "")
+    if name == "" then return false, "type a theme name first" end
+    if PRESETS[name] then return false, "that name is a built-in preset" end
+    local t = {}
+    for _, role in ipairs(ROLE_LIST) do t[role] = rgb2hex(Library.Roles[role]) end
+    local all = self:_readThemes()
+    all[name] = t
+    if not self:_writeThemes(all) then return false, "could not write theme file" end
+    Library.CustomThemes = all
+    Library.PresetName = name
+    return true, name
+end
+function Window:ApplyTheme(name)
+    if not Library.CustomThemes[name] then return false end
+    Library:SetTheme(name)
+    return true
+end
+function Window:DeleteTheme(name)
+    local all = self:_readThemes()
+    if not all[name] then return false end
+    all[name] = nil
+    if not self:_writeThemes(all) then return false end
+    Library.CustomThemes = all
+    return true
+end
+
+----------------------------------------------------------------------
 -- settings tab
 ----------------------------------------------------------------------
 function Window:AddSettingsTab(name, section)
     local win = self
     local tab = self:AddTab(name or "settings", section or "hub")
 
+    win:_loadThemes()
+    local function allPresets()
+        local t = {}
+        for _, n in ipairs(PRESET_ORDER) do t[#t + 1] = n end
+        for _, n in ipairs(win:ListThemes()) do t[#t + 1] = n end
+        return t
+    end
+
     local ui = tab:AddGroup("interface", 1)
-    local presetDD = ui:AddDropdown({ text = "preset", flag = "__preset", values = PRESET_ORDER, default = Library.PresetName,
+    local presetDD = ui:AddDropdown({ text = "preset", flag = "__preset", values = allPresets(), default = Library.PresetName,
         callback = function(v) Library:SetTheme(v) end })
     ui:AddSlider({ text = "opacity", flag = "__opacity", min = 30, max = 100, default = floor(Library.Opacity * 100), suffix = "%",
         callback = function(v) Library:SetOpacity(v / 100) end })
@@ -2313,6 +2379,41 @@ function Window:AddSettingsTab(name, section)
         pcall(function() presetDD:Set(Library.PresetName, true) end)
         win._themeSync = false
     end
+
+    -- named themes: tweak the colours above, name them, save; apply or delete later
+    local ct = tab:AddGroup("custom themes", 1)
+    local tName = ct:AddTextbox({ text = "theme name", flag = "__themename", placeholder = "type a name",
+        save = false, maxLength = 24, desc = "tweak the colors above, name it, then save" })
+    local tList = ct:AddDropdown({ text = "saved themes", flag = "__themelist", values = { "none" },
+        default = "none", save = false })
+    local function refreshThemes()
+        local l = win:ListThemes()
+        tList:SetValues(#l > 0 and l or { "none" })
+        presetDD:SetValues(allPresets())
+        pcall(function() presetDD:Set(Library.PresetName, true) end)
+    end
+    local function chosenTheme()
+        local n = tName:Get()
+        if n == "" then n = tList:Get() end
+        if n == nil or n == "none" or n == "" then return nil end
+        return n
+    end
+    ct:AddButton({ text = "save current colors", callback = function()
+        local ok, res = win:SaveTheme(chosenTheme() or "")
+        if ok then Library:Notify("saved theme: " .. res, 3); refreshThemes()
+        else Library:Notify(tostring(res), 3) end
+    end })
+    ct:AddButton({ text = "apply", callback = function()
+        local n = chosenTheme()
+        if n and win:ApplyTheme(n) then Library:Notify("applied theme: " .. n, 3)
+        else Library:Notify("no such theme", 3) end
+    end })
+    ct:AddButton({ text = "delete", confirm = true, callback = function()
+        local n = chosenTheme()
+        if n and win:DeleteTheme(n) then Library:Notify("deleted theme: " .. n, 3); refreshThemes()
+        else Library:Notify("no such theme", 3) end
+    end })
+    refreshThemes()
 
     local menu = tab:AddGroup("menu", 2)
     menu:AddKeybind({ text = "menu key", flag = "__menukey", default = win.toggleKey, notify = false, list = false,
