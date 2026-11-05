@@ -1256,6 +1256,36 @@ function Group:AddSlider(o)
         setFromX(mxp)
     end }
     row.hits[1] = h._hit
+
+    -- click the number (top right) to type an exact value: enter / click away applies, esc cancels
+    local function showTyping(buf, caret)
+        if buf == nil then
+            valP.role = "mute"
+            hd:setText(valP, fmtNum(h.value, step) .. suffix)
+        else
+            valP.role = "accent"
+            hd:setText(valP, buf .. (caret and "|" or " "))
+        end
+        h.win._dirty = true
+    end
+    h._numHit = { x = g.cw - 14 - 96, y = 0, w = 96, h = 17, fn = function(_, _, phase)
+        if phase ~= "press" then return end
+        local fcs
+        fcs = {
+            h = h, buf = "", max = 10, numeric = true, win = g.win,
+            change = function(b) showTyping(b, true) end,
+            repaint = function(caret) if Library._focus == fcs then showTyping(fcs.buf, caret) end end,
+            leave = function(vk) if vk == 0x1B then fcs.cancel = true end end,   -- esc = cancel
+            commit = function(b)
+                local n = (not fcs.cancel) and tonumber(b) or nil
+                if n then h:Set(n) end
+                showTyping(nil)
+            end,
+        }
+        Library:_focusInput(fcs)
+        showTyping("", true)
+    end }
+    row.hits[2] = h._numHit
     return h
 end
 
