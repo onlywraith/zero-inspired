@@ -1,4 +1,4 @@
--- ZeroUI 1.0.1 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.1.0 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
@@ -12,7 +12,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.1"
+local VERSION = "1.1.0"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -93,7 +93,13 @@ local function toRGB(v)
 end
 
 local PRESET_ORDER = { "zero pink", "monochrome", "graphite", "deep sea", "rose noir", "terminal",
-                       "ultraviolet", "obsidian", "nordic", "sakura", "amber" }
+                       "ultraviolet", "obsidian", "nordic", "sakura", "amber",
+                       "crimson", "blood moon", "ember", "sunset", "tangerine", "gold rush", "lemon",
+                       "lime", "matrix", "forest", "jade", "mint", "ocean", "arctic", "ice", "cyberpunk",
+                       "synthwave", "vaporwave", "royal", "lavender", "grape", "bubblegum", "cherry blossom",
+                       "coffee", "mocha", "slate", "steel", "midnight", "dracula", "tokyo night", "gruvbox",
+                       "solarized", "catppuccin", "everforest", "rosepine", "ayu", "mono blue", "mono red",
+                       "mono green", "snow" }
 local function P(a, bg, grp, top, bor, txt) return { accent = a, background = bg, group = grp, topbar = top, border = bor, text = txt } end
 local PRESETS = {
     ["zero pink"]   = P({ 255, 92, 138 }, { 17, 13, 18 }, { 27, 22, 28 }, { 21, 17, 22 }, { 52, 45, 54 }, { 236, 232, 237 }),
@@ -107,6 +113,53 @@ local PRESETS = {
     nordic          = P({ 136, 192, 208 }, { 36, 41, 51 }, { 46, 52, 64 }, { 41, 46, 57 }, { 67, 76, 94 }, { 229, 233, 240 }),
     sakura          = P({ 255, 150, 190 }, { 30, 22, 27 }, { 41, 31, 37 }, { 35, 26, 31 }, { 74, 56, 66 }, { 250, 232, 240 }),
     amber           = P({ 255, 176, 40 }, { 16, 12, 6 }, { 26, 20, 10 }, { 20, 15, 8 }, { 62, 48, 24 }, { 248, 236, 210 }),
+    -- reds / oranges / yellows
+    crimson         = P({ 220, 40, 60 }, { 14, 8, 9 }, { 25, 14, 16 }, { 19, 11, 12 }, { 62, 30, 35 }, { 242, 228, 230 }),
+    ["blood moon"]  = P({ 255, 60, 40 }, { 10, 6, 6 }, { 20, 11, 10 }, { 14, 8, 8 }, { 54, 26, 24 }, { 240, 224, 220 }),
+    ember           = P({ 255, 110, 50 }, { 16, 10, 8 }, { 28, 18, 14 }, { 21, 13, 10 }, { 66, 42, 32 }, { 248, 232, 222 }),
+    sunset          = P({ 255, 128, 90 }, { 22, 14, 24 }, { 34, 22, 36 }, { 27, 17, 29 }, { 74, 48, 72 }, { 252, 232, 232 }),
+    tangerine       = P({ 255, 145, 30 }, { 14, 11, 8 }, { 25, 20, 14 }, { 19, 15, 10 }, { 64, 50, 34 }, { 250, 238, 222 }),
+    ["gold rush"]   = P({ 240, 200, 70 }, { 14, 13, 9 }, { 25, 23, 16 }, { 19, 17, 12 }, { 62, 58, 36 }, { 246, 242, 224 }),
+    lemon           = P({ 250, 235, 80 }, { 12, 12, 8 }, { 22, 22, 14 }, { 17, 17, 10 }, { 58, 58, 30 }, { 248, 248, 226 }),
+    -- greens
+    lime            = P({ 170, 255, 60 }, { 10, 14, 8 }, { 18, 25, 14 }, { 13, 19, 10 }, { 44, 62, 30 }, { 232, 248, 220 }),
+    matrix          = P({ 0, 255, 70 }, { 0, 6, 0 }, { 5, 14, 5 }, { 2, 9, 2 }, { 12, 52, 18 }, { 160, 255, 175 }),
+    forest          = P({ 96, 190, 110 }, { 11, 16, 12 }, { 19, 27, 21 }, { 14, 21, 16 }, { 40, 62, 46 }, { 224, 240, 228 }),
+    jade            = P({ 40, 200, 150 }, { 8, 15, 13 }, { 14, 26, 23 }, { 10, 20, 18 }, { 28, 60, 52 }, { 216, 244, 236 }),
+    mint            = P({ 120, 235, 190 }, { 12, 18, 17 }, { 20, 29, 28 }, { 15, 23, 22 }, { 40, 66, 62 }, { 226, 248, 242 }),
+    everforest      = P({ 167, 192, 128 }, { 35, 42, 46 }, { 45, 53, 59 }, { 39, 46, 51 }, { 71, 82, 88 }, { 211, 198, 170 }),
+    -- blues / cyans
+    ocean           = P({ 40, 130, 255 }, { 8, 12, 22 }, { 14, 20, 36 }, { 10, 16, 28 }, { 30, 44, 78 }, { 220, 232, 250 }),
+    arctic          = P({ 150, 220, 255 }, { 14, 20, 26 }, { 22, 31, 39 }, { 17, 25, 32 }, { 44, 62, 78 }, { 232, 244, 252 }),
+    ice             = P({ 200, 235, 255 }, { 16, 20, 24 }, { 25, 31, 37 }, { 20, 25, 30 }, { 52, 62, 74 }, { 240, 248, 255 }),
+    midnight        = P({ 90, 120, 255 }, { 5, 7, 16 }, { 11, 14, 28 }, { 8, 10, 21 }, { 26, 32, 66 }, { 214, 222, 248 }),
+    ["mono blue"]   = P({ 90, 150, 255 }, { 10, 12, 16 }, { 18, 21, 28 }, { 14, 16, 22 }, { 40, 46, 62 }, { 226, 232, 244 }),
+    steel           = P({ 150, 175, 200 }, { 18, 21, 24 }, { 27, 31, 36 }, { 22, 25, 29 }, { 54, 62, 72 }, { 226, 232, 238 }),
+    slate           = P({ 120, 140, 170 }, { 22, 25, 30 }, { 32, 36, 43 }, { 27, 30, 36 }, { 60, 67, 80 }, { 222, 228, 238 }),
+    -- purples / pinks
+    cyberpunk       = P({ 255, 230, 0 }, { 10, 8, 18 }, { 20, 16, 34 }, { 14, 11, 25 }, { 70, 30, 90 }, { 0, 240, 255 }),
+    synthwave       = P({ 255, 50, 170 }, { 14, 8, 28 }, { 24, 14, 46 }, { 18, 10, 36 }, { 70, 36, 110 }, { 240, 220, 255 }),
+    vaporwave       = P({ 90, 235, 255 }, { 22, 14, 34 }, { 34, 22, 50 }, { 28, 18, 42 }, { 86, 56, 112 }, { 255, 210, 240 }),
+    royal           = P({ 150, 90, 255 }, { 12, 8, 22 }, { 22, 15, 40 }, { 17, 11, 31 }, { 56, 38, 100 }, { 232, 224, 252 }),
+    lavender        = P({ 190, 160, 255 }, { 22, 19, 30 }, { 33, 29, 44 }, { 27, 24, 37 }, { 68, 60, 90 }, { 240, 234, 252 }),
+    grape           = P({ 200, 80, 230 }, { 16, 8, 20 }, { 27, 14, 34 }, { 21, 11, 27 }, { 66, 34, 80 }, { 244, 226, 250 }),
+    bubblegum       = P({ 255, 105, 200 }, { 22, 12, 22 }, { 34, 20, 34 }, { 28, 16, 28 }, { 84, 48, 80 }, { 255, 232, 248 }),
+    ["cherry blossom"] = P({ 255, 183, 197 }, { 26, 20, 23 }, { 37, 29, 33 }, { 31, 24, 28 }, { 72, 58, 64 }, { 252, 238, 242 }),
+    -- browns
+    coffee          = P({ 205, 150, 100 }, { 16, 12, 10 }, { 27, 21, 18 }, { 21, 16, 14 }, { 62, 50, 42 }, { 238, 226, 214 }),
+    mocha           = P({ 190, 130, 110 }, { 20, 15, 14 }, { 31, 24, 22 }, { 25, 19, 18 }, { 70, 56, 52 }, { 240, 226, 220 }),
+    -- popular editor palettes
+    dracula         = P({ 189, 147, 249 }, { 40, 42, 54 }, { 50, 52, 68 }, { 33, 34, 44 }, { 68, 71, 90 }, { 248, 248, 242 }),
+    ["tokyo night"] = P({ 122, 162, 247 }, { 26, 27, 38 }, { 36, 40, 59 }, { 22, 22, 30 }, { 52, 59, 88 }, { 192, 202, 245 }),
+    gruvbox         = P({ 250, 189, 47 }, { 40, 40, 40 }, { 50, 48, 47 }, { 29, 32, 33 }, { 80, 73, 69 }, { 235, 219, 178 }),
+    solarized       = P({ 38, 139, 210 }, { 0, 43, 54 }, { 7, 54, 66 }, { 0, 36, 46 }, { 30, 78, 90 }, { 147, 161, 161 }),
+    catppuccin      = P({ 203, 166, 247 }, { 30, 30, 46 }, { 49, 50, 68 }, { 24, 24, 37 }, { 69, 71, 90 }, { 205, 214, 244 }),
+    rosepine        = P({ 235, 111, 146 }, { 25, 23, 36 }, { 31, 29, 46 }, { 21, 19, 31 }, { 64, 61, 82 }, { 224, 222, 244 }),
+    ayu             = P({ 255, 180, 84 }, { 15, 20, 25 }, { 24, 30, 38 }, { 11, 14, 20 }, { 45, 54, 66 }, { 203, 204, 198 }),
+    -- single-hue accents on neutral dark
+    ["mono red"]    = P({ 255, 70, 70 }, { 12, 11, 11 }, { 21, 19, 19 }, { 16, 15, 15 }, { 50, 44, 44 }, { 236, 230, 230 }),
+    ["mono green"]  = P({ 80, 220, 110 }, { 10, 12, 10 }, { 18, 21, 18 }, { 14, 16, 14 }, { 42, 50, 42 }, { 230, 238, 230 }),
+    snow            = P({ 60, 110, 230 }, { 238, 240, 245 }, { 250, 251, 254 }, { 228, 231, 238 }, { 200, 205, 216 }, { 30, 34, 44 }),
 }
 local ROLE_LIST = { "accent", "background", "group", "topbar", "border", "text" }
 
@@ -731,9 +784,23 @@ function Library:SetTextOutline(b)
 end
 function Library:OnUnload(fn) self._unloadFns[#self._unloadFns + 1] = fn end
 
+-- every font the runtime exposes. pairs() on Drawing.Fonts can miss entries (userdata / __index
+-- tables), so a list of known names is probed too; anything that resolves to a value is kept.
+local FONT_PROBE = { "UI", "System", "Plex", "Monospace", "Mono", "Code", "Gotham", "GothamBold", "GothamBlack",
+    "GothamMedium", "SourceSans", "SourceSansBold", "Arial", "ArialBold", "Roboto", "RobotoMono", "Ubuntu",
+    "Legacy", "Cartoon", "Fantasy", "Highway", "SciFi", "Bangers", "Oswald", "Nunito", "Fredoka", "Arcade",
+    "Antique", "Garamond", "Bodoni", "Jura", "PermanentMarker", "Creepster", "IndieFlower", "SpecialElite",
+    "Michroma", "Merriweather", "Balthazar", "Kalam", "Sarpanch", "TitilliumWeb", "AmaticSC", "Code" }
 function Library:FontNames()
-    local t = {}
-    pcall(function() for k in pairs(Drawing.Fonts) do t[#t + 1] = k end end)
+    local t, seen = {}, {}
+    local function add(k)
+        if type(k) == "string" and not seen[k] then seen[k] = true; t[#t + 1] = k end
+    end
+    pcall(function() for k in pairs(Drawing.Fonts) do add(k) end end)
+    for _, k in ipairs(FONT_PROBE) do
+        local ok, v = pcall(function() return Drawing.Fonts[k] end)
+        if ok and v ~= nil then add(k) end
+    end
     table.sort(t)
     return t
 end
@@ -2109,7 +2176,7 @@ function Window:AddSettingsTab(name, section)
         ui:AddDropdown({ text = "font", flag = "__font", values = fonts, default = Library.FontName,
             callback = function(v) Library:SetFont(v) end })
     end
-    ui:AddSlider({ text = "font size", flag = "__fontsize", min = 10, max = 20, default = Library.TextSize,
+    ui:AddSlider({ text = "font size", flag = "__fontsize", min = 9, max = 24, default = Library.TextSize,
         callback = function(v) Library:SetFont(nil, v) end })
     ui:AddToggle({ text = "watermark", flag = "__watermark", default = false,
         callback = function(v) Library:SetWatermarkVisible(v) end })
