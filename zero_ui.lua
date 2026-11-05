@@ -717,6 +717,33 @@ function Library:_stepToasts(t)
     end
 end
 
+-- draggable overlays (watermark / keybind list) -----------------------------------------------
+function Library:_overlays()
+    return { { key = "wm", hd = self._wm }, { key = "kl", hd = self._kl } }
+end
+function Library:_pressOverlay(mx, my)
+    for _, ov in ipairs(self:_overlays()) do
+        local hd = ov.hd
+        if hd and hd.shown and hd.bg2 then
+            if inRect(mx, my, hd.x, hd.y, hd.bg2.w, hd.bg2.h) then
+                local dx, dy = mx - hd.x, my - hd.y
+                self:_blur()
+                self:_closePopup()
+                self._drag = { fn = function(x, y, phase)
+                    if phase ~= "drag" then return end
+                    local vw, vh = self:_viewport()
+                    hd.x = clamp(x - dx, 0, max(0, vw - hd.bg2.w))
+                    hd.y = clamp(y - dy, 0, max(0, vh - hd.bg2.h))
+                    self["_" .. ov.key .. "Pos"] = { x = hd.x, y = hd.y }
+                    hd:sync()
+                end }
+                return true
+            end
+        end
+    end
+    return false
+end
+
 function Library:SetWatermark(text)
     self._wmText = tostring(text or "")
     self:_ensureWM()
@@ -730,6 +757,7 @@ function Library:_ensureWM()
     if not self._wm then
         local hd = newHolder(nil, 190)
         hd.x, hd.y = 12, 12
+        if self._wmPos then hd.x, hd.y = self._wmPos.x, self._wmPos.y end
         hd.bg1 = hd:rect(-1, -1, 202, 26, "line", 1)
         hd.bg2 = hd:rect(0, 0, 200, 24, "card", 2)
         hd:rect(0, 0, 200, 2, "accent", 3)
@@ -762,6 +790,7 @@ function Library:SetKeybindList(b)
     if not self._kl then
         local hd = newHolder(nil, 190)
         hd.x, hd.y = 12, 120
+        if self._klPos then hd.x, hd.y = self._klPos.x, self._klPos.y end
         hd.bg1 = hd:rect(-1, -1, 162, 26, "line", 1)
         hd.bg2 = hd:rect(0, 0, 160, 24, "card", 2)
         hd:rect(0, 0, 160, 2, "accent", 3)
@@ -2064,7 +2093,8 @@ function Window:_collect(withWindow)
     end
     local d = { flags = flags }
     if withWindow then
-        d.window = { x = self.x, y = self.y, tab = self.active and self.active.name, collapsed = self.collapsedGroups }
+        d.window = { x = self.x, y = self.y, tab = self.active and self.active.name, collapsed = self.collapsedGroups,
+            wm = Library._wmPos, kl = Library._klPos }
     end
     return d
 end
@@ -2112,6 +2142,14 @@ function Window:LoadSettings()
         local w = d.window
         if type(w) == "table" then
             if type(w.x) == "number" and type(w.y) == "number" then self.x, self.y = w.x, w.y end
+            for _, k in ipairs({ "wm", "kl" }) do
+                local pp = w[k]
+                if type(pp) == "table" and type(pp.x) == "number" and type(pp.y) == "number" then
+                    Library["_" .. k .. "Pos"] = { x = pp.x, y = pp.y }
+                    local hd = Library["_" .. k]
+                    if hd then hd.x, hd.y = pp.x, pp.y; hd:sync() end
+                end
+            end
             if type(w.collapsed) == "table" then
                 for _, tab in ipairs(self.tabs) do
                     for _, g in ipairs(tab.groups) do
@@ -2386,6 +2424,7 @@ function Library:_ensureLoop()
                                 self:_closePopup()
                             end
                         end
+                        if not handled and self:_pressOverlay(mx, my) then handled = true end
                         if not handled then
                             local f = self._focus
                             local hit
