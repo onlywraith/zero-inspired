@@ -1,4 +1,4 @@
--- ZeroUI 1.0.0 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.1 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
@@ -12,7 +12,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.0"
+local VERSION = "1.0.1"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -243,7 +243,11 @@ function Holder:text(x, y, s, size, role, z, opts)
     local o = mkObj("Text", z + self.zb)
     setp(o, "Text", s)
     opts = opts or {}
-    local p = self:_add({ o = o, kind = "text", x = x, y = y, s = s, size = size, role = role, center = opts.center, right = opts.right })
+    -- Matcha's Text.Center also centres vertically (text lands above where you put it), so
+    -- centred / right-aligned text is placed by hand: x is the centre (cx) or the right edge.
+    local p = self:_add({ o = o, kind = "text", x = x, y = y, s = s, size = size, role = role,
+                          cx = opts.center and x or nil, right = opts.right })
+    if p.cx then p.x = p.cx - tw(s, size) / 2 end
     if opts.right then p.x = opts.right - tw(s, size) end
     return p
 end
@@ -268,6 +272,7 @@ function Holder:setText(p, s)
     p.s = s
     p.o.Text = s
     if p.right then p.x = p.right - tw(s, p.size) end
+    if p.cx then p.x = p.cx - tw(s, p.size) / 2 end
     if self.win then self.win._dirty = true end
 end
 function Holder:destroy()
@@ -282,7 +287,9 @@ local function restyle(p)
         setTextSize(o, p.size + L.SizeDelta)
         if L.FontObj ~= nil then setp(o, "Font", L.FontObj) end
         setp(o, "Outline", L.TextOutline)
-        if p.center then setp(o, "Center", true) end
+        -- font / size changed: re-place centred and right-aligned text
+        if p.cx then p.x = p.cx - tw(p.s, p.size) / 2 end
+        if p.right then p.x = p.right - tw(p.s, p.size) end
     elseif p.fade then
         setp(o, "Transparency", L.Opacity)
     end
