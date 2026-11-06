@@ -1,9 +1,10 @@
--- ZeroUI 1.0.4 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.5 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
+-- 1.0.5: tab icons (AddTab(name, section, icon)) and a custom accent-coloured cursor.
 -- 1.0.4: rounded boxes / cards / sliders, [!] badge sits closer to its label.
 -- 1.0.3: typing in dropdown search / textboxes / slider values / key listening no longer reaches the game.
 --
@@ -16,7 +17,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.4"
+local VERSION = "1.0.5"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -271,9 +272,9 @@ function Holder:line(x1, y1, x2, y2, role, z)
     setp(o, "Thickness", 1)
     return self:_add({ o = o, kind = "line", x = x1, y = y1, x2 = x2, y2 = y2, role = role })
 end
-function Holder:image(x, y, w, h, z, data)
+function Holder:image(x, y, w, h, z, data, rnd)
     local o = mkObj("Image", z + self.zb)
-    setp(o, "Data", data); setp(o, "Size", Vector2.new(w, h)); setp(o, "Rounding", w / 2)
+    setp(o, "Data", data); setp(o, "Size", Vector2.new(w, h)); setp(o, "Rounding", rnd or w / 2)
     return self:_add({ o = o, kind = "image", x = x, y = y, h = h })
 end
 function Holder:setText(p, s)
@@ -1001,7 +1002,69 @@ function Window:AddSection(name)
     return self
 end
 
-function Window:AddTab(name, section)
+----------------------------------------------------------------------
+-- tab icons (vector, drawn from lines / circles) - AddTab(name, section, icon)
+-- icon = built-in name below, or an image url ("https://...png"), or nil for the default dot
+----------------------------------------------------------------------
+local ICON_ALIAS = { aim = "crosshair", settings = "cog", gear = "cog", config = "cog", player = "user",
+    character = "user", defense = "shield", block = "shield", guard = "shield", offense = "target",
+    shoot = "target", combo = "list", pass = "link", visuals = "eye", esp = "eye", misc = "dot", main = "home",
+    lightning = "bolt", speed = "bolt", auto = "play", autoplay = "play" }
+local ICONS = {
+    dot       = function(C, L) C(0, 0, 6, false); C(0, 0, 1.5, true) end,
+    target    = function(C, L) C(0, 0, 7, false); C(0, 0, 3.5, false); C(0, 0, 1, true) end,
+    crosshair = function(C, L) C(0, 0, 5, false); L(-8, 0, -3, 0); L(3, 0, 8, 0); L(0, -8, 0, -3); L(0, 3, 0, 8) end,
+    bolt      = function(C, L) L(3, -8, -4, 1); L(-4, 1, 0, 1); L(0, 1, -3, 8); L(-3, 8, 4, -2); L(4, -2, 0, -2); L(0, -2, 3, -8) end,
+    shield    = function(C, L) L(-6, -6, 0, -8); L(0, -8, 6, -6); L(6, -6, 6, 1); L(6, 1, 0, 8); L(0, 8, -6, 1); L(-6, 1, -6, -6) end,
+    user      = function(C, L) C(0, -4, 3, false); L(-6, 7, -5, 2); L(-5, 2, 5, 2); L(5, 2, 6, 7); L(-6, 7, 6, 7) end,
+    list      = function(C, L) C(-6, -5, 1, true); L(-3, -5, 7, -5); C(-6, 0, 1, true); L(-3, 0, 7, 0); C(-6, 5, 1, true); L(-3, 5, 7, 5) end,
+    link      = function(C, L) C(-3, 0, 4, false); C(3, 0, 4, false); L(-3, 0, 3, 0) end,
+    cog       = function(C, L) C(0, 0, 3, false); C(0, 0, 6, false); L(0, -8, 0, -6); L(0, 6, 0, 8); L(-8, 0, -6, 0); L(6, 0, 8, 0) end,
+    eye       = function(C, L) L(-8, 0, -3, -4); L(-3, -4, 3, -4); L(3, -4, 8, 0); L(8, 0, 3, 4); L(3, 4, -3, 4); L(-3, 4, -8, 0); C(0, 0, 2, true) end,
+    home      = function(C, L) L(-8, 0, 0, -7); L(0, -7, 8, 0); L(-6, -1, -6, 7); L(6, -1, 6, 7); L(-6, 7, 6, 7) end,
+    play      = function(C, L) L(-4, -7, -4, 7); L(-4, 7, 7, 0); L(7, 0, -4, -7) end,
+    flag      = function(C, L) L(-5, -8, -5, 8); L(-5, -8, 6, -4); L(6, -4, -5, 0) end,
+    star      = function(C, L)
+        local pts = {}
+        for i = 0, 9 do
+            local r = (i % 2 == 0) and 8 or 3.4
+            local a = -math.pi / 2 + i * math.pi / 5
+            pts[#pts + 1] = { math.cos(a) * r, math.sin(a) * r }
+        end
+        for i = 1, 10 do local a, b = pts[i], pts[i % 10 + 1]; L(a[1], a[2], b[1], b[2]) end
+    end,
+}
+Library.IconNames = function() local t = {}; for k in pairs(ICONS) do t[#t + 1] = k end table.sort(t) return t end
+
+local function buildTabIcon(tab, it, icon)
+    local cx, cy = 24, 16
+    tab.iconParts = {}
+    local parts = tab.iconParts
+    local function C(x, y, r, fill) parts[#parts + 1] = it:circle(cx + x, cy + y, r, "mute", 6, fill) end
+    local function L(x1, y1, x2, y2) parts[#parts + 1] = it:line(cx + x1, cy + y1, cx + x2, cy + y2, "mute", 6) end
+    if type(icon) == "string" and string.sub(icon, 1, 4) == "http" then
+        task.spawn(function()
+            local ok, err = pcall(function()
+                local bin = game:HttpGet(icon)
+                if tab.win._dead or not bin or #bin == 0 then return end
+                local p = it:image(cx - 8, cy - 8, 16, 16, 6, bin, 0)
+                p.isImage = true
+                parts[#parts + 1] = p
+                for i = #parts, 1, -1 do if parts[i] ~= p and not parts[i].isImage then parts[i].on = false end end
+                tab.win._dirty = true
+            end)
+            if not ok then warnOnce("icon_" .. tostring(icon), "tab icon '" .. tostring(icon) .. "': " .. tostring(err)) end
+        end)
+        ICONS.dot(C, L)   -- placeholder until the image arrives
+        return
+    end
+    local name = type(icon) == "string" and string.lower(icon) or "dot"
+    name = ICON_ALIAS[name] or name
+    local fn = ICONS[name] or ICONS.dot
+    fn(C, L)
+end
+
+function Window:AddTab(name, section, icon)
     name = tostring(name)
     local sec = self:_section(section)
     local tab = setmetatable({ win = self, name = name, section = sec, groups = {}, nextCol = 1 }, Tab)
@@ -1009,8 +1072,7 @@ function Window:AddTab(name, section)
     tab.hover = it:rect(8, 0, SW - 16, 32, "hover", 4); tab.hover.on = false
     tab.act   = it:rect(8, 0, SW - 16, 32, "active", 4); tab.act.on = false
     tab.bar   = it:rect(2, 4, 3, 24, "accent", 5); tab.bar.on = false
-    tab.icon  = it:circle(24, 16, 6, "mute", 6, false)
-    it:circle(24, 16, 1.5, "mute", 6, true)
+    buildTabIcon(tab, it, icon or ICON_ALIAS[string.lower(name)] or string.lower(name))
     tab.lbl   = it:text(42, 8, name, 14, "sub", 6)
     tab.item = it
     sec.tabs[#sec.tabs + 1] = tab
@@ -1766,6 +1828,52 @@ function Library:_gameInput(on)
     if setrobloxinput then pcall(setrobloxinput, on) end
 end
 
+-- custom cursor: an accent-coloured arrow drawn at the pointer while the menu is open.
+-- (the real system cursor is outside Matcha's control, so it stays visible underneath.)
+local CUR_PTS = { {0, 0}, {0, 16}, {4, 12}, {7, 18.5}, {9.5, 17.5}, {6.5, 11.2}, {11.5, 11} }
+local CUR_TRIS = { {1, 2, 3}, {1, 3, 7}, {3, 4, 5}, {3, 5, 6} }
+function Library:SetCursor(b)
+    self.CustomCursor = b and true or false
+    return self
+end
+function Library:_drawCursor(mx, my)
+    local show = self.CustomCursor ~= false and mx ~= nil and not self._dead
+    if not self._cur then
+        if not show then return end
+        local c = { fill = {}, line = {}, sv = -1 }
+        for i = 1, #CUR_TRIS do
+            local f = mkObj("Triangle", 1000); setp(f, "Filled", true)
+            local l = mkObj("Triangle", 1001); setp(l, "Filled", false); setp(l, "Thickness", 1)
+            c.fill[i], c.line[i] = f, l
+        end
+        self._cur = c
+    end
+    local c = self._cur
+    if not show then
+        if c.shown then
+            for i = 1, #CUR_TRIS do c.fill[i].Visible = false; c.line[i].Visible = false end
+            c.shown = false
+        end
+        return
+    end
+    if c.sv ~= self._sv then
+        c.sv = self._sv
+        for i = 1, #CUR_TRIS do c.fill[i].Color = self.C.accent; c.line[i].Color = self.C.win end
+    end
+    if c.x ~= mx or c.y ~= my or not c.shown then
+        c.x, c.y = mx, my
+        for i, t in ipairs(CUR_TRIS) do
+            local a, b, d = CUR_PTS[t[1]], CUR_PTS[t[2]], CUR_PTS[t[3]]
+            local A, B, D = Vector2.new(mx + a[1], my + a[2]), Vector2.new(mx + b[1], my + b[2]), Vector2.new(mx + d[1], my + d[2])
+            for _, o in ipairs({ c.fill[i], c.line[i] }) do o.PointA, o.PointB, o.PointC = A, B, D end
+        end
+    end
+    if not c.shown then
+        for i = 1, #CUR_TRIS do c.fill[i].Visible = true; c.line[i].Visible = true end
+        c.shown = true
+    end
+end
+
 -- keybinds polling -------------------------------------------------------------------------
 function Library:_pollBinds(t)
     if self._focus or self._listen then return end
@@ -1872,7 +1980,8 @@ function Window:_layout()
             local a = (tab == self.active) and not searching
             local m = searching and (string.sub(string.lower(tab.name), 1, #table.concat(terms, " ")) == table.concat(terms, " "))
             tab.act.on, tab.bar.on = a, a
-            tab.icon.role = (a or m) and "accent" or "mute"
+            local ir = (a or m) and "accent" or "mute"
+            for _, ip in ipairs(tab.iconParts or {}) do ip.role = ir end
             tab.lbl.role = (a or m) and "text" or ((searching) and "mute" or "sub")
             tab.hover.on = (tab == self._hoverTab) and not a and not searching
         end
@@ -2345,7 +2454,7 @@ end
 ----------------------------------------------------------------------
 function Window:AddSettingsTab(name, section)
     local win = self
-    local tab = self:AddTab(name or "settings", section or "hub")
+    local tab = self:AddTab(name or "settings", section or "hub", "cog")
 
     win:_loadThemes()
     local function allPresets()
@@ -2369,6 +2478,8 @@ function Window:AddSettingsTab(name, section)
     end
     ui:AddSlider({ text = "font size", flag = "__fontsize", min = 10, max = 20, default = Library.TextSize,
         callback = function(v) Library:SetFont(nil, v) end })
+    ui:AddToggle({ text = "custom cursor", flag = "__cursor", default = Library.CustomCursor ~= false,
+        callback = function(v) Library:SetCursor(v) end })
     ui:AddToggle({ text = "watermark", flag = "__watermark", default = false,
         callback = function(v) Library:SetWatermarkVisible(v) end })
     ui:AddToggle({ text = "keybind list", flag = "__keylist", default = false,
@@ -2524,6 +2635,7 @@ function Library:_ensureLoop()
             for _, win in ipairs(self.Windows) do if win.visible then anyVisible = true end end
 
             local overUI = false
+            local curX, curY
             if anyVisible and (not isrbxactive or isrbxactive()) then
                 local mx, my = self:_mouse()
                 if mx then
@@ -2601,6 +2713,7 @@ function Library:_ensureLoop()
                         end
                     end
                     prevDown, prevR = down, rdown
+                    curX, curY = mx, my
                     for _, win in ipairs(self.Windows) do
                         if win:_contains(mx, my) then overUI = true end
                     end
@@ -2631,6 +2744,8 @@ function Library:_ensureLoop()
 
             -- hold keys/clicks back from the game while typing, binding, a list is open, or the pointer is on the menu
             self:_gameInput(not (self._focus or self._listen or self._popup or overUI or self._drag))
+
+            self:_drawCursor(curX, curY)
 
             -- saves + redraw
             for _, win in ipairs(self.Windows) do
