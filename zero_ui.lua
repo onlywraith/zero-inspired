@@ -1,9 +1,10 @@
--- ZeroUI 1.0.3 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.4 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
+-- 1.0.4: rounded boxes / cards / sliders, [!] badge sits closer to its label.
 -- 1.0.3: typing in dropdown search / textboxes / slider values / key listening no longer reaches the game.
 --
 --   local Library = _G.ZeroUI
@@ -15,7 +16,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.3"
+local VERSION = "1.0.4"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -238,9 +239,10 @@ function Holder:_add(p)
     self.parts[#self.parts + 1] = p
     return p
 end
-function Holder:rect(x, y, w, h, role, z, color)
+function Holder:rect(x, y, w, h, role, z, color, rad)
     local o = mkObj("Square", z + self.zb)
     setp(o, "Filled", true)
+    if rad and rad > 0 then setp(o, "Rounding", rad) end
     return self:_add({ o = o, kind = "rect", x = x, y = y, w = w, h = h, role = role, color = color, fade = FADE[role] })
 end
 function Holder:text(x, y, s, size, role, z, opts)
@@ -416,8 +418,8 @@ local function popupBase(win, ax, ay, w, h)
     if ay + h > vh - 4 then ay = max(4, vh - h - 4) end
     local hd = newHolder(win, 100)
     hd.x, hd.y, hd.shown = ax, ay, true
-    hd:rect(-1, -1, w + 2, h + 2, "line", 1)
-    hd:rect(0, 0, w, h, "card", 2)
+    hd:rect(-1, -1, w + 2, h + 2, "line", 1, nil, 7)
+    hd:rect(0, 0, w, h, "card", 2, nil, 6)
     return hd, ax, ay
 end
 
@@ -926,8 +928,8 @@ function Library:CreateWindow(o)
     win.crumbSec = ch:text(179, 17, "", 15, "accent", 6)
     win.crumbSep = ch:text(240, 17, ">", 15, "mute", 6)
     win.crumbPage = ch:text(256, 17, "", 15, "text", 6)
-    win.searchBorder = ch:rect(W - 131, 10, 115, 30, "line", 3)
-    ch:rect(W - 130, 11, 113, 28, "box", 4)
+    win.searchBorder = ch:rect(W - 131, 10, 115, 30, "line", 3, nil, 6)
+    ch:rect(W - 130, 11, 113, 28, "box", 4, nil, 5)
     ch:circle(W - 112, 24, 5, "mute", 5, false)
     ch:line(W - 108, 28, W - 104, 32, "mute", 5)
     win.searchTxt = ch:text(W - 98, 17, "search...", 13, "mute", 5)
@@ -1041,7 +1043,7 @@ function Tab:AddGroup(title, col, opts)
         collapsed = opts.collapsed == true }, Group)
     local hd = newHolder(win, 0)
     g.holder = hd
-    g.bg = hd:rect(0, 0, g.cw, 100, "card", 3)
+    g.bg = hd:rect(0, 0, g.cw, 100, "card", 3, nil, 8)
     hd:circle(24, 18, 7, "accent", 5, false)
     hd:circle(24, 18, 2, "accent", 5, true)
     hd:text(44, 9, g.title, 15, "text", 6)
@@ -1138,6 +1140,7 @@ local function newHandle(g, row, kind, o)
     return h
 end
 
+local function bw_(s, size) return #tostring(s) * (size + Library.SizeDelta) * 0.45 end
 local function badgeOf(g, o, x, y)
     local b = o.badge
     if not b then return 0 end
@@ -1156,8 +1159,8 @@ local function inlineKeybind(h, o)
     local right = h._inlineRight or (g.cw - 14)
     local w = 46
     local x = right - w
-    local box = g.holder:rect(x, 3, w, 18, "line", 4)
-    local fill = g.holder:rect(x + 1, 4, w - 2, 16, "box", 5)
+    local box = g.holder:rect(x, 3, w, 18, "line", 4, nil, 5)
+    local fill = g.holder:rect(x + 1, 4, w - 2, 16, "box", 5, nil, 4)
     local lab = g.holder:text(x + w / 2, 6, "", 12, "sub", 6, { center = true })
     g.holder.curRow = nil
     h._inlineRight = x - 6
@@ -1173,8 +1176,8 @@ local function inlineColor(h, o)
     local right = h._inlineRight or (g.cw - 14)
     local w = 28
     local x = right - w
-    local box = g.holder:rect(x, 4, w, 16, "line", 4)
-    local sw = g.holder:rect(x + 1, 5, w - 2, 14, nil, 5, C3({ 255, 255, 255 }))
+    local box = g.holder:rect(x, 4, w, 16, "line", 4, nil, 5)
+    local sw = g.holder:rect(x + 1, 5, w - 2, 14, nil, 5, C3({ 255, 255, 255 }), 4)
     g.holder.curRow = nil
     h._inlineRight = x - 6
     h._inlineLeft = x
@@ -1188,11 +1191,11 @@ function Group:AddToggle(o)
     local lines = descLines(g, o)
     local rh = (#lines > 0) and (28 + #lines * 14 + 10) or 32
     local row = g:_row(rh, (o.text or "") .. " " .. (descOf(o) or ""), o)
-    hd:rect(14, 1, 20, 20, "line", 4)
-    hd:rect(15, 2, 18, 18, "box", 5)
-    local mark = hd:rect(19, 6, 10, 10, "accent", 6)
+    hd:rect(14, 1, 20, 20, "line", 4, nil, 6)
+    hd:rect(15, 2, 18, 18, "box", 5, nil, 5)
+    local mark = hd:rect(19, 6, 10, 10, "accent", 6, nil, 3)
     local lab = hd:text(44, 2, tostring(o.text or ""), 14, "text", 6)
-    badgeOf(g, o, 44 + tw(o.text or "", 14) + 6, 4)
+    badgeOf(g, o, 44 + bw_(o.text or "", 14) + 2, 4)
     addDesc(g, lines, 28)
     g:_endRow()
     local h = newHandle(g, row, "toggle", o)
@@ -1224,10 +1227,10 @@ function Group:AddSlider(o)
     local row = g:_row(rh, (o.text or "") .. " " .. (descOf(o) or ""), o)
     local tracks = g.cw - 28
     local lab = hd:text(14, 1, tostring(o.text or ""), 14, "text", 6)
-    badgeOf(g, o, 14 + tw(o.text or "", 14) + 6, 3)
+    badgeOf(g, o, 14 + bw_(o.text or "", 14) + 2, 3)
     local valP = hd:text(0, 1, "", 14, "mute", 6, { right = g.cw - 14 })
-    hd:rect(14, 26, tracks, 6, "box", 4)
-    local fill = hd:rect(14, 26, 10, 6, "accent", 5)
+    hd:rect(14, 26, tracks, 6, "box", 4, nil, 3)
+    local fill = hd:rect(14, 26, 10, 6, "accent", 5, nil, 3)
     local knob = hd:circle(14, 29, 7, "text", 7, true)
     addDesc(g, lines, 42)
     g:_endRow()
@@ -1299,10 +1302,10 @@ function Group:AddDropdown(o)
     local rh = 56 + #lines * 14 + ((#lines > 0) and 6 or 0)
     local row = g:_row(rh, (o.text or "") .. " " .. (descOf(o) or ""), o)
     local lab = hd:text(14, 1, tostring(o.text or ""), 14, "text", 6)
-    badgeOf(g, o, 14 + tw(o.text or "", 14) + 6, 3)
+    badgeOf(g, o, 14 + bw_(o.text or "", 14) + 2, 3)
     local bw = g.cw - 28
-    hd:rect(14, 22, bw, 26, "line", 4)
-    hd:rect(15, 23, bw - 2, 24, "box", 5)
+    hd:rect(14, 22, bw, 26, "line", 4, nil, 6)
+    hd:rect(15, 23, bw - 2, 24, "box", 5, nil, 5)
     local valP = hd:text(22, 28, "", 13, "text", 6)
     local cx = g.cw - 28
     local cd = { hd:line(cx - 4, 32, cx, 36, "mute", 6), hd:line(cx, 36, cx + 4, 32, "mute", 6) }
@@ -1424,9 +1427,9 @@ function Group:AddColor(o)
     local rh = (#lines > 0) and (28 + #lines * 14 + 10) or 32
     local row = g:_row(rh, (o.text or "") .. " " .. (descOf(o) or ""), o)
     local lab = hd:text(14, 2, tostring(o.text or ""), 14, "text", 6)
-    badgeOf(g, o, 14 + tw(o.text or "", 14) + 6, 4)
-    hd:rect(g.cw - 14 - 34, 2, 34, 18, "line", 4)
-    local sw = hd:rect(g.cw - 14 - 33, 3, 32, 16, nil, 5, C3({ 255, 255, 255 }))
+    badgeOf(g, o, 14 + bw_(o.text or "", 14) + 2, 4)
+    hd:rect(g.cw - 14 - 34, 2, 34, 18, "line", 4, nil, 5)
+    local sw = hd:rect(g.cw - 14 - 33, 3, 32, 16, nil, 5, C3({ 255, 255, 255 }), 4)
     addDesc(g, lines, 28)
     g:_endRow()
     local c = Library:_makeColor(g, row, o, sw, { x = g.cw - 14 - 34, y = 2, w = 34, h = 18 })
@@ -1444,8 +1447,8 @@ function Group:AddTextbox(o)
     local row = g:_row(rh, (o.text or "") .. " " .. (descOf(o) or ""), o)
     local lab = hd:text(14, 1, tostring(o.text or ""), 14, "text", 6)
     local bw = g.cw - 28
-    local border = hd:rect(14, 22, bw, 26, "line", 4)
-    hd:rect(15, 23, bw - 2, 24, "box", 5)
+    local border = hd:rect(14, 22, bw, 26, "line", 4, nil, 6)
+    hd:rect(15, 23, bw - 2, 24, "box", 5, nil, 5)
     local valP = hd:text(22, 28, "", 13, "text", 6)
     addDesc(g, lines, 54)
     g:_endRow()
@@ -1565,8 +1568,8 @@ function Group:AddKeybind(o)
     local lab = hd:text(14, 2, tostring(o.text or ""), 14, "text", 6)
     local w = 46
     local x = g.cw - 14 - w
-    local box = hd:rect(x, 3, w, 18, "line", 4)
-    local fill = hd:rect(x + 1, 4, w - 2, 16, "box", 5)
+    local box = hd:rect(x, 3, w, 18, "line", 4, nil, 5)
+    local fill = hd:rect(x + 1, 4, w - 2, 16, "box", 5, nil, 4)
     local kl = hd:text(x + w / 2, 6, "", 12, "sub", 6, { center = true })
     addDesc(g, lines, 28)
     g:_endRow()
@@ -1584,8 +1587,8 @@ function Group:AddButton(o)
     local rh = 38 + #lines * 14 + ((#lines > 0) and 6 or 0)
     local row = g:_row(rh, (o.text or "") .. " " .. (descOf(o) or ""), o)
     local bw = g.cw - 28
-    local border = hd:rect(14, 2, bw, 28, "line", 4)
-    hd:rect(15, 3, bw - 2, 26, "box", 5)
+    local border = hd:rect(14, 2, bw, 28, "line", 4, nil, 6)
+    hd:rect(15, 3, bw - 2, 26, "box", 5, nil, 5)
     local lab = hd:text(14 + bw / 2, 9, tostring(o.text or ""), 13, "text", 6, { center = true })
     addDesc(g, lines, 36)
     g:_endRow()
