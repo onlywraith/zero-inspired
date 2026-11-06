@@ -1,10 +1,11 @@
--- ZeroUI 1.0.5 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.6 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
--- 1.0.5: tab icons (AddTab(name, section, icon)) and a custom accent-coloured cursor.
+-- 1.0.6: rounded corners drawn from rects + circles (Square.Rounding is not supported in Matcha); cursor removed.
+-- 1.0.5: tab icons (AddTab(name, section, icon)).
 -- 1.0.4: rounded boxes / cards / sliders, [!] badge sits closer to its label.
 -- 1.0.3: typing in dropdown search / textboxes / slider values / key listening no longer reaches the game.
 --
@@ -17,7 +18,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.5"
+local VERSION = "1.0.6"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -243,8 +244,20 @@ end
 function Holder:rect(x, y, w, h, role, z, color, rad)
     local o = mkObj("Square", z + self.zb)
     setp(o, "Filled", true)
-    if rad and rad > 0 then setp(o, "Rounding", rad) end
-    return self:_add({ o = o, kind = "rect", x = x, y = y, w = w, h = h, role = role, color = color, fade = FADE[role] })
+    local p = self:_add({ o = o, kind = "rect", x = x, y = y, w = w, h = h, role = role, color = color, fade = FADE[role] })
+    if rad and rad > 0 then
+        -- Matcha's Square has no corner rounding: build it from two edge bars + four corner discs
+        p.rad, p.subs, p.sv_ = rad, {}, {}
+        for i = 1, 2 do
+            local b = mkObj("Square", z + self.zb); setp(b, "Filled", true); p.subs[i] = b
+        end
+        for i = 3, 6 do
+            local c = mkObj("Circle", z + self.zb)
+            setp(c, "NumSides", 28); setp(c, "Thickness", 1); setp(c, "Filled", true)
+            p.subs[i] = c
+        end
+    end
+    return p
 end
 function Holder:text(x, y, s, size, role, z, opts)
     local o = mkObj("Text", z + self.zb)
@@ -287,7 +300,10 @@ function Holder:setText(p, s)
     if self.win then self.win._dirty = true end
 end
 function Holder:destroy()
-    for _, p in ipairs(self.parts) do pcall(function() p.o:Remove() end) end
+    for _, p in ipairs(self.parts) do
+        pcall(function() p.o:Remove() end)
+        if p.subs then for _, so in ipairs(p.subs) do pcall(function() so:Remove() end) end end
+    end
     self.parts = {}
     self.shown, self.vis = false, false
 end
@@ -303,15 +319,53 @@ local function restyle(p)
         if p.right then p.x = p.right - tw(p.s, p.size) end
     elseif p.fade then
         setp(o, "Transparency", L.Opacity)
+        if p.subs then for _, so in ipairs(p.subs) do setp(so, "Transparency", L.Opacity) end end
     end
     p.sv = L._sv
+end
+
+local function subsOff(p)
+    local vs = p.sv_
+    for i, so in ipairs(p.subs) do
+        if vs[i] ~= false then so.Visible = false; vs[i] = false end
+    end
+end
+
+-- positions the main body + corner pieces of a rounded rect; returns nothing, sets o itself
+local function placeRound(p, ax, top, bot, ay)
+    local o, subs, vs = p.o, p.subs, p.sv_
+    local w = p.w
+    local r = min(p.rad, floor(w / 2), floor((bot - top) / 2))
+    local rt = r > 0 and top == ay
+    local rb = r > 0 and bot == ay + p.h
+    local y0, y1 = top + (rt and r or 0), bot - (rb and r or 0)
+    o.Position = Vector2.new(ax, y0)
+    o.Size = Vector2.new(w, max(y1 - y0, 0.5))
+    local function vis(i, b) if vs[i] ~= b then subs[i].Visible = b; vs[i] = b end end
+    if r > 0 and p.rr ~= r then
+        for i = 3, 6 do subs[i].Radius = r end
+        p.rr = r
+    end
+    if rt then
+        subs[1].Position = Vector2.new(ax + r, top); subs[1].Size = Vector2.new(max(w - 2 * r, 0.5), r)
+        subs[3].Position = Vector2.new(ax + r, top + r); subs[4].Position = Vector2.new(ax + w - r, top + r)
+    end
+    if rb then
+        subs[2].Position = Vector2.new(ax + r, bot - r); subs[2].Size = Vector2.new(max(w - 2 * r, 0.5), r)
+        subs[5].Position = Vector2.new(ax + r, bot - r); subs[6].Position = Vector2.new(ax + w - r, bot - r)
+    end
+    vis(1, rt); vis(3, rt); vis(4, rt)
+    vis(2, rb); vis(5, rb); vis(6, rb)
 end
 
 function Holder:sync()
     local L = Library
     if not self.shown then
         if self.vis then
-            for _, p in ipairs(self.parts) do if p.vis then p.o.Visible = false; p.vis = false end end
+            for _, p in ipairs(self.parts) do
+                if p.vis then p.o.Visible = false; p.vis = false end
+                if p.subs then subsOff(p) end
+            end
             self.vis = false
         end
         return
@@ -330,12 +384,16 @@ function Holder:sync()
             if p.sv ~= sv then restyle(p) end
             local rl = p.role
             local col = p.color or L.C[(dim and DIM[rl]) or rl]
-            if p.cc ~= col then o.Color = col; p.cc = col end
+            if p.cc ~= col then
+                o.Color = col; p.cc = col
+                if p.subs then for _, so in ipairs(p.subs) do so.Color = col end end
+            end
             local ax, ay = self.x + p.x, self.y + ry + p.y
             if p.kind == "rect" then
                 local top, bot = ay, ay + p.h
                 if ct then top = max(top, ct); bot = min(bot, cb) end
                 if bot - top < 1 then show = false
+                elseif p.rad then placeRound(p, ax, top, bot, ay)
                 else o.Position = Vector2.new(ax, top); o.Size = Vector2.new(p.w, bot - top) end
             elseif p.kind == "line" then
                 local ay2 = self.y + ry + p.y2
@@ -352,6 +410,7 @@ function Holder:sync()
             end
         end
         if p.vis ~= show then o.Visible = show; p.vis = show end
+        if not show and p.subs then subsOff(p) end
     end
 end
 
@@ -1009,7 +1068,7 @@ end
 local ICON_ALIAS = { aim = "crosshair", settings = "cog", gear = "cog", config = "cog", player = "user",
     character = "user", defense = "shield", block = "shield", guard = "shield", offense = "target",
     shoot = "target", combo = "list", pass = "link", visuals = "eye", esp = "eye", misc = "dot", main = "home",
-    lightning = "bolt", speed = "bolt", auto = "play", autoplay = "play" }
+    lightning = "bolt", teleport = "map", treasure = "star", appraiser = "search", minigames = "play", cast = "target", reel = "bolt", accessories = "star", speed = "bolt", auto = "play", autoplay = "play" }
 local ICONS = {
     dot       = function(C, L) C(0, 0, 6, false); C(0, 0, 1.5, true) end,
     target    = function(C, L) C(0, 0, 7, false); C(0, 0, 3.5, false); C(0, 0, 1, true) end,
@@ -1024,6 +1083,15 @@ local ICONS = {
     home      = function(C, L) L(-8, 0, 0, -7); L(0, -7, 8, 0); L(-6, -1, -6, 7); L(6, -1, 6, 7); L(-6, 7, 6, 7) end,
     play      = function(C, L) L(-4, -7, -4, 7); L(-4, 7, 7, 0); L(7, 0, -4, -7) end,
     flag      = function(C, L) L(-5, -8, -5, 8); L(-5, -8, 6, -4); L(6, -4, -5, 0) end,
+    search    = function(C, L) C(-2, -2, 5, false); L(2, 2, 8, 8) end,
+    lock      = function(C, L) L(-6, -1, 6, -1); L(6, -1, 6, 8); L(6, 8, -6, 8); L(-6, 8, -6, -1); L(-3, -1, -3, -5); L(-3, -5, 0, -8); L(0, -8, 3, -5); L(3, -5, 3, -1) end,
+    bell      = function(C, L) L(-6, 4, -4, -4); L(-4, -4, 0, -8); L(0, -8, 4, -4); L(4, -4, 6, 4); L(-6, 4, 6, 4); C(0, 7, 1.5, true) end,
+    chart     = function(C, L) L(-7, -8, -7, 7); L(-7, 7, 8, 7); L(-4, 3, -1, -1); L(-1, -1, 2, 2); L(2, 2, 7, -5) end,
+    heart     = function(C, L) C(-3, -3, 3.5, false); C(3, -3, 3.5, false); L(-6.3, -1.5, 0, 8); L(6.3, -1.5, 0, 8) end,
+    clock     = function(C, L) C(0, 0, 8, false); L(0, 0, 0, -5); L(0, 0, 4, 2) end,
+    plus      = function(C, L) L(-7, 0, 7, 0); L(0, -7, 0, 7) end,
+    check     = function(C, L) L(-7, 1, -2, 6); L(-2, 6, 7, -5) end,
+    map       = function(C, L) L(-8, -5, -3, -7); L(-3, -7, 3, -5); L(3, -5, 8, -7); L(-8, -5, -8, 6); L(-8, 6, -3, 8); L(-3, 8, 3, 6); L(3, 6, 8, 8); L(8, -7, 8, 8); L(-3, -7, -3, 8); L(3, -5, 3, 6) end,
     star      = function(C, L)
         local pts = {}
         for i = 0, 9 do
@@ -1828,52 +1896,6 @@ function Library:_gameInput(on)
     if setrobloxinput then pcall(setrobloxinput, on) end
 end
 
--- custom cursor: an accent-coloured arrow drawn at the pointer while the menu is open.
--- (the real system cursor is outside Matcha's control, so it stays visible underneath.)
-local CUR_PTS = { {0, 0}, {0, 16}, {4, 12}, {7, 18.5}, {9.5, 17.5}, {6.5, 11.2}, {11.5, 11} }
-local CUR_TRIS = { {1, 2, 3}, {1, 3, 7}, {3, 4, 5}, {3, 5, 6} }
-function Library:SetCursor(b)
-    self.CustomCursor = b and true or false
-    return self
-end
-function Library:_drawCursor(mx, my)
-    local show = self.CustomCursor ~= false and mx ~= nil and not self._dead
-    if not self._cur then
-        if not show then return end
-        local c = { fill = {}, line = {}, sv = -1 }
-        for i = 1, #CUR_TRIS do
-            local f = mkObj("Triangle", 1000); setp(f, "Filled", true)
-            local l = mkObj("Triangle", 1001); setp(l, "Filled", false); setp(l, "Thickness", 1)
-            c.fill[i], c.line[i] = f, l
-        end
-        self._cur = c
-    end
-    local c = self._cur
-    if not show then
-        if c.shown then
-            for i = 1, #CUR_TRIS do c.fill[i].Visible = false; c.line[i].Visible = false end
-            c.shown = false
-        end
-        return
-    end
-    if c.sv ~= self._sv then
-        c.sv = self._sv
-        for i = 1, #CUR_TRIS do c.fill[i].Color = self.C.accent; c.line[i].Color = self.C.win end
-    end
-    if c.x ~= mx or c.y ~= my or not c.shown then
-        c.x, c.y = mx, my
-        for i, t in ipairs(CUR_TRIS) do
-            local a, b, d = CUR_PTS[t[1]], CUR_PTS[t[2]], CUR_PTS[t[3]]
-            local A, B, D = Vector2.new(mx + a[1], my + a[2]), Vector2.new(mx + b[1], my + b[2]), Vector2.new(mx + d[1], my + d[2])
-            for _, o in ipairs({ c.fill[i], c.line[i] }) do o.PointA, o.PointB, o.PointC = A, B, D end
-        end
-    end
-    if not c.shown then
-        for i = 1, #CUR_TRIS do c.fill[i].Visible = true; c.line[i].Visible = true end
-        c.shown = true
-    end
-end
-
 -- keybinds polling -------------------------------------------------------------------------
 function Library:_pollBinds(t)
     if self._focus or self._listen then return end
@@ -2478,8 +2500,6 @@ function Window:AddSettingsTab(name, section)
     end
     ui:AddSlider({ text = "font size", flag = "__fontsize", min = 10, max = 20, default = Library.TextSize,
         callback = function(v) Library:SetFont(nil, v) end })
-    ui:AddToggle({ text = "custom cursor", flag = "__cursor", default = Library.CustomCursor ~= false,
-        callback = function(v) Library:SetCursor(v) end })
     ui:AddToggle({ text = "watermark", flag = "__watermark", default = false,
         callback = function(v) Library:SetWatermarkVisible(v) end })
     ui:AddToggle({ text = "keybind list", flag = "__keylist", default = false,
@@ -2635,7 +2655,6 @@ function Library:_ensureLoop()
             for _, win in ipairs(self.Windows) do if win.visible then anyVisible = true end end
 
             local overUI = false
-            local curX, curY
             if anyVisible and (not isrbxactive or isrbxactive()) then
                 local mx, my = self:_mouse()
                 if mx then
@@ -2713,7 +2732,6 @@ function Library:_ensureLoop()
                         end
                     end
                     prevDown, prevR = down, rdown
-                    curX, curY = mx, my
                     for _, win in ipairs(self.Windows) do
                         if win:_contains(mx, my) then overUI = true end
                     end
@@ -2744,8 +2762,6 @@ function Library:_ensureLoop()
 
             -- hold keys/clicks back from the game while typing, binding, a list is open, or the pointer is on the menu
             self:_gameInput(not (self._focus or self._listen or self._popup or overUI or self._drag))
-
-            self:_drawCursor(curX, curY)
 
             -- saves + redraw
             for _, win in ipairs(self.Windows) do
