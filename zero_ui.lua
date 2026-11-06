@@ -1,9 +1,10 @@
--- ZeroUI 1.0.2 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.3 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
+-- 1.0.3: typing in dropdown search / textboxes / slider values / key listening no longer reaches the game.
 --
 --   local Library = _G.ZeroUI
 --   local win  = Library:CreateWindow({ title = "zero hub", subtitle = "v1", size = {822, 640} })
@@ -14,7 +15,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.2"
+local VERSION = "1.0.3"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -1754,6 +1755,13 @@ function Library:_listenStep()
     end
 end
 
+-- while a text field has focus (or a keybind is listening) keep keystrokes away from the game
+function Library:_gameInput(on)
+    if self._gameOn == on then return end
+    self._gameOn = on
+    if setrobloxinput then pcall(setrobloxinput, on) end
+end
+
 -- keybinds polling -------------------------------------------------------------------------
 function Library:_pollBinds(t)
     if self._focus or self._listen then return end
@@ -2502,6 +2510,7 @@ function Library:_ensureLoop()
             self:_listenStep()
             self:_typeStep(t)
             self:_pollBinds(t)
+            self:_gameInput(not (self._focus or self._listen))
 
             -- buttons waiting for confirmation
             for _, win in ipairs(self.Windows) do
@@ -2662,6 +2671,7 @@ end
 function Library:Unload()
     if self._dead then return end
     self._dead = true
+    self:_gameInput(true)
     for _, fn in ipairs(self._unloadFns) do pcall(fn) end
     self:_closePopup()
     for i = #self.Windows, 1, -1 do pcall(function() self.Windows[i]:Destroy() end) end
