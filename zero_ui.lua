@@ -1757,8 +1757,9 @@ end
 
 -- while a text field has focus (or a keybind is listening) keep keystrokes away from the game
 function Library:_gameInput(on)
-    if self._gameOn == on then return end
-    self._gameOn = on
+    local t = now()
+    if self._gameOn == on and (on or t - (self._gameAt or 0) < 0.3) then return end
+    self._gameOn, self._gameAt = on, t
     if setrobloxinput then pcall(setrobloxinput, on) end
 end
 
@@ -2510,7 +2511,6 @@ function Library:_ensureLoop()
             self:_listenStep()
             self:_typeStep(t)
             self:_pollBinds(t)
-            self:_gameInput(not (self._focus or self._listen))
 
             -- buttons waiting for confirmation
             for _, win in ipairs(self.Windows) do
@@ -2520,6 +2520,7 @@ function Library:_ensureLoop()
             local anyVisible = false
             for _, win in ipairs(self.Windows) do if win.visible then anyVisible = true end end
 
+            local overUI = false
             if anyVisible and (not isrbxactive or isrbxactive()) then
                 local mx, my = self:_mouse()
                 if mx then
@@ -2597,6 +2598,11 @@ function Library:_ensureLoop()
                         end
                     end
                     prevDown, prevR = down, rdown
+                    for _, win in ipairs(self.Windows) do
+                        if win:_contains(mx, my) then overUI = true end
+                    end
+                    local pp = self._popup
+                    if pp and inRect(mx, my, pp.x, pp.y, pp.w, pp.h) then overUI = true end
 
                     -- sidebar hover
                     if not down then
@@ -2619,6 +2625,9 @@ function Library:_ensureLoop()
                     warn("[ZeroUI] no mouse position available - the menu draws but cannot be clicked")
                 end
             end
+
+            -- hold keys/clicks back from the game while typing, binding, a list is open, or the pointer is on the menu
+            self:_gameInput(not (self._focus or self._listen or self._popup or overUI or self._drag))
 
             -- saves + redraw
             for _, win in ipairs(self.Windows) do
@@ -2671,7 +2680,7 @@ end
 function Library:Unload()
     if self._dead then return end
     self._dead = true
-    self:_gameInput(true)
+    self._gameOn = nil; self:_gameInput(true)
     for _, fn in ipairs(self._unloadFns) do pcall(fn) end
     self:_closePopup()
     for i = #self.Windows, 1, -1 do pcall(function() self.Windows[i]:Destroy() end) end
