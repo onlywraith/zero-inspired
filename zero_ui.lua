@@ -1,8 +1,9 @@
--- ZeroUI 1.0.2 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.11 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
+-- 1.0.11: game input capture ported from the reference UI (typing / key binding / dragging / pointer over the menu).
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
 --
 --   local Library = _G.ZeroUI
@@ -14,7 +15,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.2"
+local VERSION = "1.0.11"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -31,7 +32,7 @@ local function now() return tick() end
 local Library = {
     Version = VERSION, Windows = {}, Flags = {},
     CustomThemes = {},
-    Settings = { cursorOffset = { 0, 0 } },
+    Settings = { cursorOffset = { 0, 0 }, captureInput = true },
     Opacity = 1, TextOutline = false, TextSize = 13, SizeDelta = 0, FontName = "UI",
     PresetName = "zero pink",
     _sv = 1, _objs = {}, _conns = {}, _toasts = {}, _unloadFns = {}, _wheel = 0, _dead = false,
@@ -900,6 +901,7 @@ function Library:CreateWindow(o)
         W = size[1], H = size[2], columns = clamp(o.columns or 2, 1, 3),
         toggleKey = o.toggleKey or "RSHIFT", configFile = o.config, folder = o.folder,
         visible = o.visible ~= false, onUnload = o.onUnload,
+        captureInput = o.captureInput,
         sections = {}, tabs = {}, flags = {}, flagOrder = {}, query = "", scroll = 0,
         _dirty = true, _pendingLoad = (o.autoload ~= false) and (o.config ~= nil or o.folder ~= nil),
         collapsedGroups = {}, _prevKey = false,
@@ -1755,6 +1757,44 @@ function Library:_listenStep()
     end
 end
 
+----------------------------------------------------------------------
+-- game input capture (same scheme as the reference UI): while you type in a field, bind a key,
+-- drag something, or the pointer is over the menu, setrobloxinput(false) keeps it away from the game.
+-- A window's captureInput may be a bool or a function; false means "let the game have its input".
+----------------------------------------------------------------------
+local function capOK(win)
+    local c = win and win.captureInput
+    if c == nil or c == true then return true end
+    if c == false then return false end
+    if type(c) == "function" then
+        local ok, v = pcall(c, win)
+        if not ok then win.captureInput = nil; return true end
+        return v == nil or (v and true or false)
+    end
+    return true
+end
+
+function Library:_wantBlock()
+    local f = self._focus
+    if f then return capOK(f.win or self.Windows[1]) end
+    if self._listen then return capOK(self._listen.win) end
+    local d = self._drag
+    if d then return capOK(d.win) end
+    if self._overUI then return capOK(self._overWin or self.Windows[1]) end
+    return false
+end
+
+function Library:_gameInput(force)
+    if not setrobloxinput then return end
+    local on = true
+    if self.Settings.captureInput and not self._dead then on = not self:_wantBlock() end
+    if force or self._inputSent ~= on then
+        if self._inputSent == nil and (on and not force) then return end   -- never blocked yet: leave the game alone
+        self._inputSent = on
+        pcall(setrobloxinput, on)
+    end
+end
+
 -- keybinds polling -------------------------------------------------------------------------
 function Library:_pollBinds(t)
     if self._focus or self._listen then return end
@@ -2358,6 +2398,9 @@ function Window:AddSettingsTab(name, section)
     end
     ui:AddSlider({ text = "font size", flag = "__fontsize", min = 10, max = 20, default = Library.TextSize,
         callback = function(v) Library:SetFont(nil, v) end })
+    ui:AddToggle({ text = "block game input", flag = "__capture", default = Library.Settings.captureInput ~= false,
+        tooltip = "keeps typing and clicks on the menu from also reaching the game",
+        callback = function(v) Library.Settings.captureInput = v and true or false; Library:_gameInput(true) end })
     ui:AddToggle({ text = "watermark", flag = "__watermark", default = false,
         callback = function(v) Library:SetWatermarkVisible(v) end })
     ui:AddToggle({ text = "keybind list", flag = "__keylist", default = false,
@@ -2512,6 +2555,7 @@ function Library:_ensureLoop()
             local anyVisible = false
             for _, win in ipairs(self.Windows) do if win.visible then anyVisible = true end end
 
+            self._overUI, self._overWin = false, nil
             if anyVisible and (not isrbxactive or isrbxactive()) then
                 local mx, my = self:_mouse()
                 if mx then
@@ -2589,6 +2633,15 @@ function Library:_ensureLoop()
                         end
                     end
                     prevDown, prevR = down, rdown
+                    for i = #self.Windows, 1, -1 do
+                        local win = self.Windows[i]
+                        if win:_contains(mx, my) then self._overUI, self._overWin = true, win break end
+                    end
+                    local pp = self._popup
+                    if pp and inRect(mx, my, pp.x, pp.y, pp.w, pp.h) then
+                        self._overUI = true
+                        self._overWin = self._overWin or self.Windows[1]
+                    end
 
                     -- sidebar hover
                     if not down then
@@ -2621,6 +2674,7 @@ function Library:_ensureLoop()
                 if win._dirty then win:Refresh() end
             end
             if self._popup then self._popup.update() end
+            self:_gameInput(false)
             self:_stepToasts(t)
             self:_stepWM(t)
             self:_stepKL(t)
@@ -2663,6 +2717,8 @@ end
 function Library:Unload()
     if self._dead then return end
     self._dead = true
+    if self._inputSent == false then pcall(setrobloxinput, true) end
+    self._inputSent = nil
     for _, fn in ipairs(self._unloadFns) do pcall(fn) end
     self:_closePopup()
     for i = #self.Windows, 1, -1 do pcall(function() self.Windows[i]:Destroy() end) end
