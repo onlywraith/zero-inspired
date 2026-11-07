@@ -1,9 +1,10 @@
--- ZeroUI 1.0.6 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.7 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
+-- 1.0.7: input blocking honours window captureInput / inputGuard (fixes the menu fighting a running macro).
 -- 1.0.6: cursor removed; rounded corners removed again (not supported by Matcha drawings).
 -- 1.0.5: tab icons (AddTab(name, section, icon)).
 -- 1.0.4: rounded boxes / cards / sliders, [!] badge sits closer to its label.
@@ -18,7 +19,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.6"
+local VERSION = "1.0.7"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -908,6 +909,7 @@ function Library:CreateWindow(o)
         W = size[1], H = size[2], columns = clamp(o.columns or 2, 1, 3),
         toggleKey = o.toggleKey or "RSHIFT", configFile = o.config, folder = o.folder,
         visible = o.visible ~= false, onUnload = o.onUnload,
+        captureInput = o.captureInput, inputGuard = o.inputGuard,
         sections = {}, tabs = {}, flags = {}, flagOrder = {}, query = "", scroll = 0,
         _dirty = true, _pendingLoad = (o.autoload ~= false) and (o.config ~= nil or o.folder ~= nil),
         collapsedGroups = {}, _prevKey = false,
@@ -1834,8 +1836,25 @@ function Library:_listenStep()
 end
 
 -- while a text field has focus (or a keybind is listening) keep keystrokes away from the game
+-- a window's captureInput / inputGuard may be a bool or a function; false / true respectively means "hands off"
+local function optv(v)
+    if type(v) == "function" then
+        local ok, r = pcall(v)
+        return ok and r or nil
+    end
+    return v
+end
+function Library:_mayBlock()
+    for _, w in ipairs(self.Windows) do
+        if optv(w.captureInput) == false or optv(w.inputGuard) == true then return false end
+    end
+    return true
+end
+
 function Library:_gameInput(on)
+    if not on and not self:_mayBlock() then on = true end
     local t = now()
+    if on and self._gameOn == nil then self._gameOn = true; return end   -- never blocked: leave the game's input alone
     if self._gameOn == on and (on or t - (self._gameAt or 0) < 0.3) then return end
     self._gameOn, self._gameAt = on, t
     if setrobloxinput then pcall(setrobloxinput, on) end
