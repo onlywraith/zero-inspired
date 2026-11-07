@@ -1,9 +1,10 @@
--- ZeroUI 1.0.8 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.9 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
+-- 1.0.9: drawing objects are only repositioned when they actually moved (cuts per-frame property writes; menu stayed laggy while the macro ran).
 -- 1.0.8: only blocks game input while typing / binding / a list is open (no pointer-over-menu blocking, no repeated re-sends).
 -- 1.0.7: input blocking honours window captureInput / inputGuard (fixes the menu fighting a running macro).
 -- 1.0.6: cursor removed; rounded corners removed again (not supported by Matcha drawings).
@@ -20,7 +21,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.8"
+local VERSION = "1.0.9"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -342,19 +343,26 @@ function Holder:sync()
                 local top, bot = ay, ay + p.h
                 if ct then top = max(top, ct); bot = min(bot, cb) end
                 if bot - top < 1 then show = false
-                else o.Position = Vector2.new(ax, top); o.Size = Vector2.new(p.w, bot - top) end
+                elseif p.lax ~= ax or p.lt ~= top or p.lb ~= bot or p.lw ~= p.w then
+                    p.lax, p.lt, p.lb, p.lw = ax, top, bot, p.w
+                    o.Position = Vector2.new(ax, top); o.Size = Vector2.new(p.w, bot - top)
+                end
             elseif p.kind == "line" then
                 local ay2 = self.y + ry + p.y2
                 if ct and (min(ay, ay2) < ct or max(ay, ay2) > cb) then show = false end
-                o.From = Vector2.new(ax, ay); o.To = Vector2.new(self.x + p.x2, ay2)
+                local bx = self.x + p.x2
+                if p.lax ~= ax or p.lay ~= ay or p.lbx ~= bx or p.lby ~= ay2 then
+                    p.lax, p.lay, p.lbx, p.lby = ax, ay, bx, ay2
+                    o.From = Vector2.new(ax, ay); o.To = Vector2.new(bx, ay2)
+                end
             elseif p.kind == "circle" then
                 if ct and (ay - p.r < ct or ay + p.r > cb) then show = false end
-                o.Position = Vector2.new(ax, ay)
+                if p.lax ~= ax or p.lay ~= ay then p.lax, p.lay = ax, ay; o.Position = Vector2.new(ax, ay) end
             else
                 local h = (p.kind == "text") and (p.size + 4) or (p.h or 0)
                 if ct and (ay < ct or ay + h > cb) then show = false end
                 if p.native then ay = ay + (p.size + L.SizeDelta + 4) / 2 end
-                o.Position = Vector2.new(ax, ay)
+                if p.lax ~= ax or p.lay ~= ay then p.lax, p.lay = ax, ay; o.Position = Vector2.new(ax, ay) end
             end
         end
         if p.vis ~= show then o.Visible = show; p.vis = show end
