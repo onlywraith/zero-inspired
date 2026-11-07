@@ -1,9 +1,10 @@
--- ZeroUI 1.0.7 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.8 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
+-- 1.0.8: only blocks game input while typing / binding / a list is open (no pointer-over-menu blocking, no repeated re-sends).
 -- 1.0.7: input blocking honours window captureInput / inputGuard (fixes the menu fighting a running macro).
 -- 1.0.6: cursor removed; rounded corners removed again (not supported by Matcha drawings).
 -- 1.0.5: tab icons (AddTab(name, section, icon)).
@@ -19,7 +20,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.7"
+local VERSION = "1.0.8"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -1840,7 +1841,8 @@ end
 local function optv(v)
     if type(v) == "function" then
         local ok, r = pcall(v)
-        return ok and r or nil
+        if not ok then return nil end
+        return r   -- keep a literal false (captureInput = function() return false end)
     end
     return v
 end
@@ -1853,10 +1855,9 @@ end
 
 function Library:_gameInput(on)
     if not on and not self:_mayBlock() then on = true end
-    local t = now()
     if on and self._gameOn == nil then self._gameOn = true; return end   -- never blocked: leave the game's input alone
-    if self._gameOn == on and (on or t - (self._gameAt or 0) < 0.3) then return end
-    self._gameOn, self._gameAt = on, t
+    if self._gameOn == on then return end   -- only touch it on a change, like a one-shot toggle
+    self._gameOn = on
     if setrobloxinput then pcall(setrobloxinput, on) end
 end
 
@@ -2725,7 +2726,7 @@ function Library:_ensureLoop()
             end
 
             -- hold keys/clicks back from the game while typing, binding, a list is open, or the pointer is on the menu
-            self:_gameInput(not (self._focus or self._listen or self._popup or overUI or self._drag))
+            self:_gameInput(not (self._focus or self._listen or self._popup))
 
             -- saves + redraw
             for _, win in ipairs(self.Windows) do
