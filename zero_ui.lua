@@ -1,9 +1,10 @@
--- ZeroUI 1.0.9 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.10 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
+-- 1.0.10: removed setrobloxinput game-input blocking entirely (suspected menu freeze). TAB_ICONS flag near buildTabIcon.
 -- 1.0.9: drawing objects are only repositioned when they actually moved (cuts per-frame property writes; menu stayed laggy while the macro ran).
 -- 1.0.8: only blocks game input while typing / binding / a list is open (no pointer-over-menu blocking, no repeated re-sends).
 -- 1.0.7: input blocking honours window captureInput / inputGuard (fixes the menu fighting a running macro).
@@ -21,7 +22,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.9"
+local VERSION = "1.0.10"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -1060,7 +1061,9 @@ local ICONS = {
 }
 Library.IconNames = function() local t = {}; for k in pairs(ICONS) do t[#t + 1] = k end table.sort(t) return t end
 
+local TAB_ICONS = true   -- set to false for the plain dot on every tab
 local function buildTabIcon(tab, it, icon)
+    if not TAB_ICONS then icon = "dot" end
     local cx, cy = 24, 16
     tab.iconParts = {}
     local parts = tab.iconParts
@@ -1861,13 +1864,8 @@ function Library:_mayBlock()
     return true
 end
 
-function Library:_gameInput(on)
-    if not on and not self:_mayBlock() then on = true end
-    if on and self._gameOn == nil then self._gameOn = true; return end   -- never blocked: leave the game's input alone
-    if self._gameOn == on then return end   -- only touch it on a change, like a one-shot toggle
-    self._gameOn = on
-    if setrobloxinput then pcall(setrobloxinput, on) end
-end
+-- game-input blocking was removed in 1.0.10: calling setrobloxinput from the menu froze it. Kept as a no-op.
+function Library:_gameInput(on) end
 
 -- keybinds polling -------------------------------------------------------------------------
 function Library:_pollBinds(t)
