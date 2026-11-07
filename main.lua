@@ -3,7 +3,7 @@
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
--- 1.0.11: game input capture ported from the reference UI (typing / key binding / dragging / pointer over the menu).
+-- 1.0.11: game input capture (always on, no setting) ported from the reference UI (typing / key binding / dragging / pointer over the menu).
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
 --
 --   local Library = _G.ZeroUI
@@ -20,7 +20,7 @@ local VERSION = "1.0.11"
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
     if type(old) == "table" and not old._dead then
-        if old.Version == VERSION and not rawget(_G, "ZEROUI_RELOAD") then return old end
+        if old.Version == VERSION and type(old.CreateWindow) == "function" and not rawget(_G, "ZEROUI_RELOAD") then return old end
         pcall(function() old:Unload() end)
     end
 end
@@ -32,7 +32,7 @@ local function now() return tick() end
 local Library = {
     Version = VERSION, Windows = {}, Flags = {},
     CustomThemes = {},
-    Settings = { cursorOffset = { 0, 0 }, captureInput = true },
+    Settings = { cursorOffset = { 0, 0 } },
     Opacity = 1, TextOutline = false, TextSize = 13, SizeDelta = 0, FontName = "UI",
     PresetName = "zero pink",
     _sv = 1, _objs = {}, _conns = {}, _toasts = {}, _unloadFns = {}, _wheel = 0, _dead = false,
@@ -1787,7 +1787,7 @@ end
 function Library:_gameInput(force)
     if not setrobloxinput then return end
     local on = true
-    if self.Settings.captureInput and not self._dead then on = not self:_wantBlock() end
+    if not self._dead then on = not self:_wantBlock() end
     if force or self._inputSent ~= on then
         if self._inputSent == nil and (on and not force) then return end   -- never blocked yet: leave the game alone
         self._inputSent = on
@@ -2398,9 +2398,6 @@ function Window:AddSettingsTab(name, section)
     end
     ui:AddSlider({ text = "font size", flag = "__fontsize", min = 10, max = 20, default = Library.TextSize,
         callback = function(v) Library:SetFont(nil, v) end })
-    ui:AddToggle({ text = "block game input", flag = "__capture", default = Library.Settings.captureInput ~= false,
-        tooltip = "keeps typing and clicks on the menu from also reaching the game",
-        callback = function(v) Library.Settings.captureInput = v and true or false; Library:_gameInput(true) end })
     ui:AddToggle({ text = "watermark", flag = "__watermark", default = false,
         callback = function(v) Library:SetWatermarkVisible(v) end })
     ui:AddToggle({ text = "keybind list", flag = "__keylist", default = false,
