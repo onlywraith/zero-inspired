@@ -1,12 +1,12 @@
 -- ZeroUI 1.0.11 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
--- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
+-- settings tab. No dependencies; publishes itself as _G.main (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.11: game input capture (always on, no setting) ported from the reference UI (typing / key binding / dragging / pointer over the menu).
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
 --
---   local Library = _G.ZeroUI
+--   local Library = _G.main
 --   local win  = Library:CreateWindow({ title = "zero hub", subtitle = "v1", size = {822, 640} })
 --   local tab  = win:AddTab("auto shoot", "Offense")      -- tab name, sidebar section
 --   local card = tab:AddGroup("auto shoot", 1)            -- card title, column
@@ -18,7 +18,7 @@
 local VERSION = "1.0.11"
 
 do -- reuse a live copy of the same version, replace an older one
-    local old = rawget(_G, "ZeroUI")
+    local old = rawget(_G, "main")
     if type(old) == "table" and not old._dead then
         if old.Version == VERSION and type(old.CreateWindow) == "function" and not rawget(_G, "ZEROUI_RELOAD") then return old end
         pcall(function() old:Unload() end)
@@ -37,7 +37,7 @@ local Library = {
     PresetName = "zero pink",
     _sv = 1, _objs = {}, _conns = {}, _toasts = {}, _unloadFns = {}, _wheel = 0, _dead = false,
 }
-_G.ZeroUI = Library
+_G.main = Library
 
 ----------------------------------------------------------------------
 -- services
@@ -2725,7 +2725,7 @@ function Library:Unload()
     if self._kl then self._kl:destroy() end
     for _, o in ipairs(self._objs) do pcall(function() o:Remove() end) end
     self._objs = {}
-    if rawget(_G, "ZeroUI") == self then _G.ZeroUI = nil end
+    if rawget(_G, "main") == self then _G.main = nil end
 end
 
 return Library
