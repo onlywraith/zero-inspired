@@ -1,17 +1,9 @@
--- ZeroUI 1.0.10 - the Zero Hub look as a reusable Drawing UI library for Matcha.
+-- ZeroUI 1.0.2 - the Zero Hub look as a reusable Drawing UI library for Matcha.
 -- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
 -- settings tab. No dependencies; publishes itself as _G.ZeroUI (Matcha drops the
 -- return value of loadstring chunks).
 --
 -- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
--- 1.0.10: removed setrobloxinput game-input blocking entirely (suspected menu freeze). TAB_ICONS flag near buildTabIcon.
--- 1.0.9: drawing objects are only repositioned when they actually moved (cuts per-frame property writes; menu stayed laggy while the macro ran).
--- 1.0.8: only blocks game input while typing / binding / a list is open (no pointer-over-menu blocking, no repeated re-sends).
--- 1.0.7: input blocking honours window captureInput / inputGuard (fixes the menu fighting a running macro).
--- 1.0.6: cursor removed; rounded corners removed again (not supported by Matcha drawings).
--- 1.0.5: tab icons (AddTab(name, section, icon)).
--- 1.0.4: rounded boxes / cards / sliders, [!] badge sits closer to its label.
--- 1.0.3: typing in dropdown search / textboxes / slider values / key listening no longer reaches the game.
 --
 --   local Library = _G.ZeroUI
 --   local win  = Library:CreateWindow({ title = "zero hub", subtitle = "v1", size = {822, 640} })
@@ -22,7 +14,7 @@
 --
 -- Full reference: see hub_template.lua
 
-local VERSION = "1.0.10"
+local VERSION = "1.0.2"
 
 do -- reuse a live copy of the same version, replace an older one
     local old = rawget(_G, "ZeroUI")
@@ -276,9 +268,9 @@ function Holder:line(x1, y1, x2, y2, role, z)
     setp(o, "Thickness", 1)
     return self:_add({ o = o, kind = "line", x = x1, y = y1, x2 = x2, y2 = y2, role = role })
 end
-function Holder:image(x, y, w, h, z, data, rnd)
+function Holder:image(x, y, w, h, z, data)
     local o = mkObj("Image", z + self.zb)
-    setp(o, "Data", data); setp(o, "Size", Vector2.new(w, h)); setp(o, "Rounding", rnd or w / 2)
+    setp(o, "Data", data); setp(o, "Size", Vector2.new(w, h)); setp(o, "Rounding", w / 2)
     return self:_add({ o = o, kind = "image", x = x, y = y, h = h })
 end
 function Holder:setText(p, s)
@@ -291,9 +283,7 @@ function Holder:setText(p, s)
     if self.win then self.win._dirty = true end
 end
 function Holder:destroy()
-    for _, p in ipairs(self.parts) do
-        pcall(function() p.o:Remove() end)
-    end
+    for _, p in ipairs(self.parts) do pcall(function() p.o:Remove() end) end
     self.parts = {}
     self.shown, self.vis = false, false
 end
@@ -317,9 +307,7 @@ function Holder:sync()
     local L = Library
     if not self.shown then
         if self.vis then
-            for _, p in ipairs(self.parts) do
-                if p.vis then p.o.Visible = false; p.vis = false end
-            end
+            for _, p in ipairs(self.parts) do if p.vis then p.o.Visible = false; p.vis = false end end
             self.vis = false
         end
         return
@@ -344,26 +332,19 @@ function Holder:sync()
                 local top, bot = ay, ay + p.h
                 if ct then top = max(top, ct); bot = min(bot, cb) end
                 if bot - top < 1 then show = false
-                elseif p.lax ~= ax or p.lt ~= top or p.lb ~= bot or p.lw ~= p.w then
-                    p.lax, p.lt, p.lb, p.lw = ax, top, bot, p.w
-                    o.Position = Vector2.new(ax, top); o.Size = Vector2.new(p.w, bot - top)
-                end
+                else o.Position = Vector2.new(ax, top); o.Size = Vector2.new(p.w, bot - top) end
             elseif p.kind == "line" then
                 local ay2 = self.y + ry + p.y2
                 if ct and (min(ay, ay2) < ct or max(ay, ay2) > cb) then show = false end
-                local bx = self.x + p.x2
-                if p.lax ~= ax or p.lay ~= ay or p.lbx ~= bx or p.lby ~= ay2 then
-                    p.lax, p.lay, p.lbx, p.lby = ax, ay, bx, ay2
-                    o.From = Vector2.new(ax, ay); o.To = Vector2.new(bx, ay2)
-                end
+                o.From = Vector2.new(ax, ay); o.To = Vector2.new(self.x + p.x2, ay2)
             elseif p.kind == "circle" then
                 if ct and (ay - p.r < ct or ay + p.r > cb) then show = false end
-                if p.lax ~= ax or p.lay ~= ay then p.lax, p.lay = ax, ay; o.Position = Vector2.new(ax, ay) end
+                o.Position = Vector2.new(ax, ay)
             else
                 local h = (p.kind == "text") and (p.size + 4) or (p.h or 0)
                 if ct and (ay < ct or ay + h > cb) then show = false end
                 if p.native then ay = ay + (p.size + L.SizeDelta + 4) / 2 end
-                if p.lax ~= ax or p.lay ~= ay then p.lax, p.lay = ax, ay; o.Position = Vector2.new(ax, ay) end
+                o.Position = Vector2.new(ax, ay)
             end
         end
         if p.vis ~= show then o.Visible = show; p.vis = show end
@@ -919,7 +900,6 @@ function Library:CreateWindow(o)
         W = size[1], H = size[2], columns = clamp(o.columns or 2, 1, 3),
         toggleKey = o.toggleKey or "RSHIFT", configFile = o.config, folder = o.folder,
         visible = o.visible ~= false, onUnload = o.onUnload,
-        captureInput = o.captureInput, inputGuard = o.inputGuard,
         sections = {}, tabs = {}, flags = {}, flagOrder = {}, query = "", scroll = 0,
         _dirty = true, _pendingLoad = (o.autoload ~= false) and (o.config ~= nil or o.folder ~= nil),
         collapsedGroups = {}, _prevKey = false,
@@ -1018,80 +998,7 @@ function Window:AddSection(name)
     return self
 end
 
-----------------------------------------------------------------------
--- tab icons (vector, drawn from lines / circles) - AddTab(name, section, icon)
--- icon = built-in name below, or an image url ("https://...png"), or nil for the default dot
-----------------------------------------------------------------------
-local ICON_ALIAS = { aim = "crosshair", settings = "cog", gear = "cog", config = "cog", player = "user",
-    character = "user", defense = "shield", block = "shield", guard = "shield", offense = "target",
-    shoot = "target", combo = "list", pass = "link", visuals = "eye", esp = "eye", misc = "dot", main = "home",
-    lightning = "bolt", teleport = "map", treasure = "star", appraiser = "search", minigames = "play", cast = "target", reel = "bolt", accessories = "star", speed = "bolt", auto = "play", autoplay = "play" }
-local ICONS = {
-    dot       = function(C, L) C(0, 0, 6, false); C(0, 0, 1.5, true) end,
-    target    = function(C, L) C(0, 0, 7, false); C(0, 0, 3.5, false); C(0, 0, 1, true) end,
-    crosshair = function(C, L) C(0, 0, 5, false); L(-8, 0, -3, 0); L(3, 0, 8, 0); L(0, -8, 0, -3); L(0, 3, 0, 8) end,
-    bolt      = function(C, L) L(3, -8, -4, 1); L(-4, 1, 0, 1); L(0, 1, -3, 8); L(-3, 8, 4, -2); L(4, -2, 0, -2); L(0, -2, 3, -8) end,
-    shield    = function(C, L) L(-6, -6, 0, -8); L(0, -8, 6, -6); L(6, -6, 6, 1); L(6, 1, 0, 8); L(0, 8, -6, 1); L(-6, 1, -6, -6) end,
-    user      = function(C, L) C(0, -4, 3, false); L(-6, 7, -5, 2); L(-5, 2, 5, 2); L(5, 2, 6, 7); L(-6, 7, 6, 7) end,
-    list      = function(C, L) C(-6, -5, 1, true); L(-3, -5, 7, -5); C(-6, 0, 1, true); L(-3, 0, 7, 0); C(-6, 5, 1, true); L(-3, 5, 7, 5) end,
-    link      = function(C, L) C(-3, 0, 4, false); C(3, 0, 4, false); L(-3, 0, 3, 0) end,
-    cog       = function(C, L) C(0, 0, 3, false); C(0, 0, 6, false); L(0, -8, 0, -6); L(0, 6, 0, 8); L(-8, 0, -6, 0); L(6, 0, 8, 0) end,
-    eye       = function(C, L) L(-8, 0, -3, -4); L(-3, -4, 3, -4); L(3, -4, 8, 0); L(8, 0, 3, 4); L(3, 4, -3, 4); L(-3, 4, -8, 0); C(0, 0, 2, true) end,
-    home      = function(C, L) L(-8, 0, 0, -7); L(0, -7, 8, 0); L(-6, -1, -6, 7); L(6, -1, 6, 7); L(-6, 7, 6, 7) end,
-    play      = function(C, L) L(-4, -7, -4, 7); L(-4, 7, 7, 0); L(7, 0, -4, -7) end,
-    flag      = function(C, L) L(-5, -8, -5, 8); L(-5, -8, 6, -4); L(6, -4, -5, 0) end,
-    search    = function(C, L) C(-2, -2, 5, false); L(2, 2, 8, 8) end,
-    lock      = function(C, L) L(-6, -1, 6, -1); L(6, -1, 6, 8); L(6, 8, -6, 8); L(-6, 8, -6, -1); L(-3, -1, -3, -5); L(-3, -5, 0, -8); L(0, -8, 3, -5); L(3, -5, 3, -1) end,
-    bell      = function(C, L) L(-6, 4, -4, -4); L(-4, -4, 0, -8); L(0, -8, 4, -4); L(4, -4, 6, 4); L(-6, 4, 6, 4); C(0, 7, 1.5, true) end,
-    chart     = function(C, L) L(-7, -8, -7, 7); L(-7, 7, 8, 7); L(-4, 3, -1, -1); L(-1, -1, 2, 2); L(2, 2, 7, -5) end,
-    heart     = function(C, L) C(-3, -3, 3.5, false); C(3, -3, 3.5, false); L(-6.3, -1.5, 0, 8); L(6.3, -1.5, 0, 8) end,
-    clock     = function(C, L) C(0, 0, 8, false); L(0, 0, 0, -5); L(0, 0, 4, 2) end,
-    plus      = function(C, L) L(-7, 0, 7, 0); L(0, -7, 0, 7) end,
-    check     = function(C, L) L(-7, 1, -2, 6); L(-2, 6, 7, -5) end,
-    map       = function(C, L) L(-8, -5, -3, -7); L(-3, -7, 3, -5); L(3, -5, 8, -7); L(-8, -5, -8, 6); L(-8, 6, -3, 8); L(-3, 8, 3, 6); L(3, 6, 8, 8); L(8, -7, 8, 8); L(-3, -7, -3, 8); L(3, -5, 3, 6) end,
-    star      = function(C, L)
-        local pts = {}
-        for i = 0, 9 do
-            local r = (i % 2 == 0) and 8 or 3.4
-            local a = -math.pi / 2 + i * math.pi / 5
-            pts[#pts + 1] = { math.cos(a) * r, math.sin(a) * r }
-        end
-        for i = 1, 10 do local a, b = pts[i], pts[i % 10 + 1]; L(a[1], a[2], b[1], b[2]) end
-    end,
-}
-Library.IconNames = function() local t = {}; for k in pairs(ICONS) do t[#t + 1] = k end table.sort(t) return t end
-
-local TAB_ICONS = false   -- set to false for the plain dot on every tab
-local function buildTabIcon(tab, it, icon)
-    if not TAB_ICONS then icon = "dot" end
-    local cx, cy = 24, 16
-    tab.iconParts = {}
-    local parts = tab.iconParts
-    local function C(x, y, r, fill) parts[#parts + 1] = it:circle(cx + x, cy + y, r, "mute", 6, fill) end
-    local function L(x1, y1, x2, y2) parts[#parts + 1] = it:line(cx + x1, cy + y1, cx + x2, cy + y2, "mute", 6) end
-    if type(icon) == "string" and string.sub(icon, 1, 4) == "http" then
-        task.spawn(function()
-            local ok, err = pcall(function()
-                local bin = game:HttpGet(icon)
-                if tab.win._dead or not bin or #bin == 0 then return end
-                local p = it:image(cx - 8, cy - 8, 16, 16, 6, bin, 0)
-                p.isImage = true
-                parts[#parts + 1] = p
-                for i = #parts, 1, -1 do if parts[i] ~= p and not parts[i].isImage then parts[i].on = false end end
-                tab.win._dirty = true
-            end)
-            if not ok then warnOnce("icon_" .. tostring(icon), "tab icon '" .. tostring(icon) .. "': " .. tostring(err)) end
-        end)
-        ICONS.dot(C, L)   -- placeholder until the image arrives
-        return
-    end
-    local name = type(icon) == "string" and string.lower(icon) or "dot"
-    name = ICON_ALIAS[name] or name
-    local fn = ICONS[name] or ICONS.dot
-    fn(C, L)
-end
-
-function Window:AddTab(name, section, icon)
+function Window:AddTab(name, section)
     name = tostring(name)
     local sec = self:_section(section)
     local tab = setmetatable({ win = self, name = name, section = sec, groups = {}, nextCol = 1 }, Tab)
@@ -1099,7 +1006,8 @@ function Window:AddTab(name, section, icon)
     tab.hover = it:rect(8, 0, SW - 16, 32, "hover", 4); tab.hover.on = false
     tab.act   = it:rect(8, 0, SW - 16, 32, "active", 4); tab.act.on = false
     tab.bar   = it:rect(2, 4, 3, 24, "accent", 5); tab.bar.on = false
-    buildTabIcon(tab, it, icon or ICON_ALIAS[string.lower(name)] or string.lower(name))
+    tab.icon  = it:circle(24, 16, 6, "mute", 6, false)
+    it:circle(24, 16, 1.5, "mute", 6, true)
     tab.lbl   = it:text(42, 8, name, 14, "sub", 6)
     tab.item = it
     sec.tabs[#sec.tabs + 1] = tab
@@ -1847,26 +1755,6 @@ function Library:_listenStep()
     end
 end
 
--- while a text field has focus (or a keybind is listening) keep keystrokes away from the game
--- a window's captureInput / inputGuard may be a bool or a function; false / true respectively means "hands off"
-local function optv(v)
-    if type(v) == "function" then
-        local ok, r = pcall(v)
-        if not ok then return nil end
-        return r   -- keep a literal false (captureInput = function() return false end)
-    end
-    return v
-end
-function Library:_mayBlock()
-    for _, w in ipairs(self.Windows) do
-        if optv(w.captureInput) == false or optv(w.inputGuard) == true then return false end
-    end
-    return true
-end
-
--- game-input blocking was removed in 1.0.10: calling setrobloxinput from the menu froze it. Kept as a no-op.
-function Library:_gameInput(on) end
-
 -- keybinds polling -------------------------------------------------------------------------
 function Library:_pollBinds(t)
     if self._focus or self._listen then return end
@@ -1973,8 +1861,7 @@ function Window:_layout()
             local a = (tab == self.active) and not searching
             local m = searching and (string.sub(string.lower(tab.name), 1, #table.concat(terms, " ")) == table.concat(terms, " "))
             tab.act.on, tab.bar.on = a, a
-            local ir = (a or m) and "accent" or "mute"
-            for _, ip in ipairs(tab.iconParts or {}) do ip.role = ir end
+            tab.icon.role = (a or m) and "accent" or "mute"
             tab.lbl.role = (a or m) and "text" or ((searching) and "mute" or "sub")
             tab.hover.on = (tab == self._hoverTab) and not a and not searching
         end
@@ -2447,7 +2334,7 @@ end
 ----------------------------------------------------------------------
 function Window:AddSettingsTab(name, section)
     local win = self
-    local tab = self:AddTab(name or "settings", section or "hub", "cog")
+    local tab = self:AddTab(name or "settings", section or "hub")
 
     win:_loadThemes()
     local function allPresets()
@@ -2625,7 +2512,6 @@ function Library:_ensureLoop()
             local anyVisible = false
             for _, win in ipairs(self.Windows) do if win.visible then anyVisible = true end end
 
-            local overUI = false
             if anyVisible and (not isrbxactive or isrbxactive()) then
                 local mx, my = self:_mouse()
                 if mx then
@@ -2703,11 +2589,6 @@ function Library:_ensureLoop()
                         end
                     end
                     prevDown, prevR = down, rdown
-                    for _, win in ipairs(self.Windows) do
-                        if win:_contains(mx, my) then overUI = true end
-                    end
-                    local pp = self._popup
-                    if pp and inRect(mx, my, pp.x, pp.y, pp.w, pp.h) then overUI = true end
 
                     -- sidebar hover
                     if not down then
@@ -2730,9 +2611,6 @@ function Library:_ensureLoop()
                     warn("[ZeroUI] no mouse position available - the menu draws but cannot be clicked")
                 end
             end
-
-            -- hold keys/clicks back from the game while typing, binding, a list is open, or the pointer is on the menu
-            self:_gameInput(not (self._focus or self._listen or self._popup))
 
             -- saves + redraw
             for _, win in ipairs(self.Windows) do
@@ -2785,7 +2663,6 @@ end
 function Library:Unload()
     if self._dead then return end
     self._dead = true
-    self._gameOn = nil; self:_gameInput(true)
     for _, fn in ipairs(self._unloadFns) do pcall(fn) end
     self:_closePopup()
     for i = #self.Windows, 1, -1 do pcall(function() self.Windows[i]:Destroy() end) end
