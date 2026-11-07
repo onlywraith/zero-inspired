@@ -1061,7 +1061,7 @@ local ICONS = {
 }
 Library.IconNames = function() local t = {}; for k in pairs(ICONS) do t[#t + 1] = k end table.sort(t) return t end
 
-local TAB_ICONS = true   -- set to false for the plain dot on every tab
+local TAB_ICONS = false   -- set to false for the plain dot on every tab
 local function buildTabIcon(tab, it, icon)
     if not TAB_ICONS then icon = "dot" end
     local cx, cy = 24, 16
