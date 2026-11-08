@@ -1,23 +1,6 @@
--- ZeroUI 1.0.11 - the Zero Hub look as a reusable Drawing UI library for Matcha.
--- Sidebar sections + tabs, collapsible cards, hub-wide search, themes, configs and a
--- settings tab. No dependencies; publishes itself as _G.main (Matcha drops the
--- return value of loadstring chunks).
---
--- 1.0.11: game input capture (always on, no setting) ported from the reference UI (typing / key binding / dragging / pointer over the menu).
--- 1.0.2: named custom themes (save / apply / delete) in the settings tab.
---
---   local Library = _G.main
---   local win  = Library:CreateWindow({ title = "zero hub", subtitle = "v1", size = {822, 640} })
---   local tab  = win:AddTab("auto shoot", "Offense")      -- tab name, sidebar section
---   local card = tab:AddGroup("auto shoot", 1)            -- card title, column
---   card:AddToggle({ text = "auto shoot", flag = "auto", default = false })
---   win:AddSettingsTab()
---
--- Full reference: see hub_template.lua
-
 local VERSION = "1.0.11"
 
-do -- reuse a live copy of the same version, replace an older one
+do
     local old = rawget(_G, "main")
     if type(old) == "table" and not old._dead then
         if old.Version == VERSION and type(old.CreateWindow) == "function" and not rawget(_G, "ZEROUI_RELOAD") then return old end
@@ -39,9 +22,6 @@ local Library = {
 }
 _G.main = Library
 
-----------------------------------------------------------------------
--- services
-----------------------------------------------------------------------
 local function svc(name)
     for _ = 1, 40 do
         local ok, s = pcall(function() return game:GetService(name) or game[name] end)
@@ -54,9 +34,6 @@ local Players     = svc("Players")
 local HttpService = svc("HttpService")
 local lp = Players and Players.LocalPlayer
 
-----------------------------------------------------------------------
--- colours
-----------------------------------------------------------------------
 local function C3(c) return Color3.fromRGB(floor(c[1] + .5), floor(c[2] + .5), floor(c[3] + .5)) end
 local function mix(a, b, t) return { a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t, a[3] + (b[3] - a[3]) * t } end
 local function hex2rgb(h)
@@ -135,11 +112,7 @@ Library:_derive()
 local FADE = { win = true, side = true, card = true, box = true, line = true, hover = true, active = true }
 local DIM  = { text = "mute", sub = "mute", accent = "mute" }
 
-----------------------------------------------------------------------
--- small helpers
-----------------------------------------------------------------------
 local function wrapText(s, n)
-    -- "\n" starts a new line; every line is word-wrapped to n characters
     local lines = {}
     for para in string.gmatch(tostring(s or "") .. "\n", "(.-)\n") do
         local cur = ""
@@ -188,10 +161,7 @@ local function fmtNum(v, step)
     return string.format("%." .. dec .. "f", v)
 end
 
-----------------------------------------------------------------------
--- keys
-----------------------------------------------------------------------
-local KEYMAP = {}   -- name -> virtual key
+local KEYMAP = {}
 for c = 0x41, 0x5A do KEYMAP[string.char(c)] = c end
 for c = 0x30, 0x39 do KEYMAP[string.char(c)] = c end
 for i = 1, 24 do KEYMAP["F" .. i] = 0x70 + i - 1 end
@@ -209,7 +179,7 @@ local function keyDown(name)
     return vk and iskeypressed(vk) or false
 end
 
--- typing: { vk, normal, shifted }
+
 local TYPE = {}
 for c = 0x41, 0x5A do TYPE[#TYPE + 1] = { c, string.char(c + 32), string.char(c) } end
 local SHIFTNUM = { ")", "!", "@", "#", "$", "%", "^", "&", "*", "(" }
@@ -219,9 +189,6 @@ for _, e in ipairs({ { 0x20, " ", " " }, { 0xBE, ".", ">" }, { 0xBC, ",", "<" },
     { 0xBB, "=", "+" }, { 0xBA, ";", ":" }, { 0xC0, "`", "~" }, { 0xDB, "[", "{" }, { 0xDD, "]", "}" }, { 0xDC, "\\", "|" },
     { 0xDE, "'", "\"" }, { 0x6E, ".", "." }, { 0x6D, "-", "-" } }) do TYPE[#TYPE + 1] = e end
 
-----------------------------------------------------------------------
--- drawing parts / holders
-----------------------------------------------------------------------
 local Holder = {}
 Holder.__index = Holder
 
@@ -251,12 +218,9 @@ function Holder:text(x, y, s, size, role, z, opts)
     local o = mkObj("Text", z + self.zb)
     setp(o, "Text", s)
     opts = opts or {}
-    -- Matcha's Text.Center also centres vertically (text lands above where you put it), so
-    -- centred / right-aligned text is placed by hand: x is the centre (cx) or the right edge.
     local p = self:_add({ o = o, kind = "text", x = x, y = y, s = s, size = size, role = role,
                           cx = opts.center and x or nil, right = opts.right })
     if p.cx then
-        -- let the renderer centre it (exact for any font); fall back to the width estimate
         if opts.center and setp(o, "Center", true) then p.native, p.x = true, p.cx
         else p.x = p.cx - tw(s, size) / 2 end
     end
@@ -299,7 +263,6 @@ local function restyle(p)
         setTextSize(o, p.size + L.SizeDelta)
         if L.FontObj ~= nil then setp(o, "Font", L.FontObj) end
         setp(o, "Outline", L.TextOutline)
-        -- font / size changed: re-place centred and right-aligned text
         if p.cx and not p.native then p.x = p.cx - tw(p.s, p.size) / 2 end
         if p.right then p.x = p.right - tw(p.s, p.size) end
     elseif p.fade then
@@ -356,9 +319,6 @@ function Holder:sync()
     end
 end
 
-----------------------------------------------------------------------
--- handles (one per widget)
-----------------------------------------------------------------------
 local Handle = {}
 Handle.__index = Handle
 
@@ -401,9 +361,6 @@ function Handle:Reset()
     return self
 end
 
-----------------------------------------------------------------------
--- popups (dropdown list, colour picker)
-----------------------------------------------------------------------
 function Library:_closePopup()
     local p = self._popup
     if not p then return end
@@ -430,24 +387,22 @@ function Library:_openDropdown(h, ax, ay, w)
     local vals = h.values
     local n = #vals
     local ITEM, MAXV, SEARCH_H = 22, 10, 30
-    local searchable = n > 6                       -- small lists don't need a search box
+    local searchable = n > 6
     local visN = min(n, MAXV)
     local top = searchable and SEARCH_H or 0
     local height = top + visN * ITEM + 4
     local oy = ay
-    if oy + height > select(2, self:_viewport()) - 4 then oy = ay - height - 28 end   -- flip above the box
+    if oy + height > select(2, self:_viewport()) - 4 then oy = ay - height - 28 end
     local hd, px, py = popupBase(win, ax, oy, w, height)
     local pop = { win = win, holder = hd, owner = h, x = px, y = py, w = w, h = height, offset = 0, query = "", caret = true }
-    local list = vals                              -- currently visible (filtered) values
+    local list = vals
 
-    -- search box
     local sTxt
     if searchable then
         hd:rect(6, 5, w - 12, 22, "line", 3)
         hd:rect(7, 6, w - 14, 20, "box", 4)
         sTxt = hd:text(13, 9, "", 13, "mute", 5)
     end
-    -- scrollbar + empty message
     local sbTrack = hd:rect(w - 6, top + 3, 3, visN * ITEM, "line", 4); sbTrack.on = false
     local sbThumb = hd:rect(w - 6, top + 3, 3, 20, "mute", 5); sbThumb.on = false
     local emptyTxt = hd:text(10, top + 5, "no matches", 13, "mute", 5); emptyTxt.on = false
@@ -510,7 +465,6 @@ function Library:_openDropdown(h, ax, ay, w)
             end
         end
         emptyTxt.on = #list == 0
-        -- scrollbar thumb
         local mo = maxOffset()
         if mo > 0 then
             local trackH = visN * ITEM
@@ -558,24 +512,22 @@ function Library:_openDropdown(h, ax, ay, w)
             end,
             repaint = function(c) pop.caret = c and true or false; pop.update() end,
             leave = function(vk)
-                if vk == 0x0D then                       -- enter: take the hovered / first match
+                if vk == 0x0D then
                     local v = (hoverIdx and list[pop.offset + hoverIdx]) or list[1]
                     if v ~= nil then pick(v) end
-                    return h.multi == true                   -- multi keeps the box focused
+                    return h.multi == true
                 end
-                Library:_closePopup()                    -- esc closes the list
+                Library:_closePopup()
             end,
         })
     end
 
     function pop.press(mx, my)
         if not inRect(mx, my, px, py, w, height) then return false end
-        -- search box
         if searchable and my < py + top then
             if not (Library._focus and Library._focus.pop == pop) then focusSearch() end
             return true
         end
-        -- scrollbar drag
         if maxOffset() > 0 and mx >= px + w - 12 then
             local trackH = visN * ITEM
             local function seek(y)
@@ -601,7 +553,7 @@ function Library:_openDropdown(h, ax, ay, w)
     self._popup = pop
     pop.refilter()
     pop.update()
-    focusSearch()                                    -- start typing right away
+    focusSearch()
 end
 
 function Library:_openColor(h, ax, ay)
@@ -665,9 +617,6 @@ function Library:_openColor(h, ax, ay)
     repaint()
 end
 
-----------------------------------------------------------------------
--- notifications, watermark, keybind list
-----------------------------------------------------------------------
 function Library:_viewport()
     local vw, vh = 1920, 1080
     pcall(function()
@@ -725,7 +674,6 @@ function Library:_stepToasts(t)
     end
 end
 
--- draggable overlays (watermark / keybind list) -----------------------------------------------
 function Library:_overlays()
     return { { key = "wm", hd = self._wm }, { key = "kl", hd = self._kl } }
 end
@@ -834,9 +782,6 @@ function Library:_stepKL(t)
     hd:sync()
 end
 
-----------------------------------------------------------------------
--- theme / font API
-----------------------------------------------------------------------
 function Library:SetTheme(name)
     local p = PRESETS[name] or (type(name) == "string" and self.CustomThemes[name]) or nil
     if type(name) == "table" then p = name end
@@ -883,14 +828,11 @@ function Library:FontNames()
     return t
 end
 
-----------------------------------------------------------------------
--- WINDOW
-----------------------------------------------------------------------
 local Window, Tab, Group = {}, {}, {}
 Window.__index, Tab.__index, Group.__index = Window, Tab, Group
 
-local SW = 165          -- sidebar width
-local TOP = 64          -- first card y
+local SW = 165
+local TOP = 64
 local CLIP_T, CLIP_B = 56, 8
 
 function Library:CreateWindow(o)
@@ -918,7 +860,6 @@ function Library:CreateWindow(o)
     win.contentX = SW + 14
     win.cardW = floor((win.W - win.contentX - 18 - (win.columns - 1) * win.cardGap) / win.columns)
 
-    -- chrome ------------------------------------------------------
     local W, H = win.W, win.H
     local ch = newHolder(win, 0)
     win.chrome = ch
@@ -982,7 +923,6 @@ function Window:_loadAvatar()
     end)
 end
 
--- sections / tabs ---------------------------------------------------------
 function Window:_section(name)
     name = name or "general"
     for _, s in ipairs(self.sections) do if s.name == name then return s end end
@@ -997,7 +937,6 @@ function Window:_section(name)
     return s
 end
 
--- a sidebar section header on its own (tabs added later with the same section name join it)
 function Window:AddSection(name)
     self:_section(name)
     self._dirty = true
@@ -1064,7 +1003,6 @@ function Group:SetCollapsed(b) self.collapsed = b and true or false; self.win._d
 function Group:Toggle() return self:SetCollapsed(not self.collapsed) end
 function Group:SetTitle(t) self.title = tostring(t); return self end
 
--- flags --------------------------------------------------------------------
 function Window:GetValue(flag)
     local h = self.flags[flag]
     return h and h:Get() or nil
@@ -1106,9 +1044,6 @@ function Window:_updateDeps()
     end
 end
 
-----------------------------------------------------------------------
--- rows + widgets
-----------------------------------------------------------------------
 function Group:_row(h, kw, o)
     local row = { group = self, h = h, y = 0, vis = true, hits = {}, kw = string.lower(kw or ""),
                   userHidden = false, dep = o and o.depends, hideDisabled = o and o.hideDisabled }
@@ -1155,7 +1090,6 @@ local function badgeOf(g, o, x, y)
     return tw(txt, 12) + 4
 end
 
--- inline sub-widgets that ride on a toggle row ---------------------------------
 local function inlineKeybind(h, o)
     local g, row = h.group, h.row
     g.holder.curRow = row
@@ -1169,7 +1103,7 @@ local function inlineKeybind(h, o)
     h._inlineRight = x - 6
     h._inlineLeft = x
     local kb = Library:_makeKeybind(g, row, o, { box = box, fill = fill, lab = lab, x = x, y = 3, w = w, h = 18 }, h)
-    table.insert(row.hits, 1, kb._hit)   -- inline hits are tested before the toggle's own full-width hit
+    table.insert(row.hits, 1, kb._hit)
     return kb
 end
 
@@ -1266,8 +1200,6 @@ function Group:AddSlider(o)
         setFromX(mxp)
     end }
     row.hits[1] = h._hit
-
-    -- click the number (top right) to type an exact value: enter / click away applies, esc cancels
     local function showTyping(buf, caret)
         if buf == nil then
             valP.role = "mute"
@@ -1372,7 +1304,6 @@ function Group:AddDropdown(o)
     return h
 end
 
--- colour --------------------------------------------------------------------
 function Library:_makeColor(g, row, o, swatch, rect)
     local h = setmetatable({ win = g.win, group = g, row = row, kind = "color", flag = o.flag, text = o.text,
         listeners = {}, callback = o.callback, save = o.save ~= false, default = o.default }, Handle)
@@ -1442,7 +1373,6 @@ function Group:AddColor(o)
     return c
 end
 
--- textbox -----------------------------------------------------------------------
 function Group:AddTextbox(o)
     local g, hd = self, self.holder
     local lines = descLines(g, o)
@@ -1499,8 +1429,6 @@ function Group:AddTextbox(o)
     row.hits[1] = h._hit
     return h
 end
-
--- keybind -------------------------------------------------------------------------
 function Library:_makeKeybind(g, row, o, ui, toggleH)
     local win = g.win
     local h = setmetatable({ win = win, group = g, row = row, kind = "keybind", flag = o.flag, text = o.text,
@@ -1583,7 +1511,6 @@ function Group:AddKeybind(o)
     return h
 end
 
--- button / label / divider ------------------------------------------------------------
 function Group:AddButton(o)
     local g, hd = self, self.holder
     local lines = descLines(g, o)
@@ -1647,13 +1574,11 @@ function Group:AddLabel(o)
         self.text = tostring(t)
         local ls = wrapText(self.text, floor((g.cw - 28) / (13 * 0.54)))
         if #ls == 0 then ls = { "" } end
-        -- grow: add text lines the first text didn't need
         for i = #parts + 1, #ls do
             hd.curRow = row
             parts[i] = hd:text(14, 2 + (i - 1) * 15, ls[i], 13, o.dim and "mute" or "sub", 6)
             hd.curRow = nil
         end
-        -- shrink / grow the row so there is no empty gap under short text
         local want = #ls * 15 + 8
         if row.h ~= want then row.h = want; if g.win then g.win._dirty = true end end
         for i, p in ipairs(parts) do hd:setText(p, ls[i] or "") end
@@ -1671,10 +1596,6 @@ function Group:AddDivider()
     h.Get = function() return nil end
     return h
 end
-
-----------------------------------------------------------------------
--- input helpers (focus typing, key listening)
-----------------------------------------------------------------------
 function Library:_blur()
     local f = self._focus
     if not f then return end
@@ -1771,11 +1692,6 @@ function Library:_listenStep()
     end
 end
 
-----------------------------------------------------------------------
--- game input capture (same scheme as the reference UI): while you type in a field, bind a key,
--- drag something, or the pointer is over the menu, setrobloxinput(false) keeps it away from the game.
--- A window's captureInput may be a bool or a function; false means "let the game have its input".
-----------------------------------------------------------------------
 local function capOK(win)
     local c = win and win.captureInput
     if c == nil or c == true then return true end
@@ -1808,8 +1724,6 @@ function Library:_gameInput(force)
         pcall(setrobloxinput, on)
     end
 end
-
--- keybinds polling -------------------------------------------------------------------------
 function Library:_pollBinds(t)
     if self._focus or self._listen then return end
     for _, win in ipairs(self.Windows) do
@@ -1853,9 +1767,6 @@ function Library:_pollBinds(t)
     end
 end
 
-----------------------------------------------------------------------
--- layout
-----------------------------------------------------------------------
 function Window:_groupsInView()
     local terms = termsOf(self.query)
     if #terms == 0 then
@@ -1895,7 +1806,6 @@ function Window:_layout()
     local terms = termsOf(self.query)
     local searching = #terms > 0
 
-    -- sidebar
     local y = 74
     local lastSec
     for _, sec in ipairs(self.sections) do
@@ -1922,7 +1832,6 @@ function Window:_layout()
         y = y + 6
     end
 
-    -- breadcrumb
     local lead, tail
     if searching then
         lead, tail = "search", string.sub(self.query, 1, 24)
@@ -1935,7 +1844,6 @@ function Window:_layout()
     self.crumbSep.x = 179 + tw(lead, 15) + 8
     self.crumbPage.x = self.crumbSep.x + 16
 
-    -- cards
     local list, isSearch = self:_groupsInView()
     local inList = {}
     local colY = {}
@@ -1987,7 +1895,6 @@ function Window:_layout()
     self.chrome.x, self.chrome.y, self.chrome.shown = self.x, self.y, vis
     self.noResults.on = isSearch and #list == 0
 
-    -- scrollbar
     self.sb = { max = maxScroll, trackY = TOP, trackH = view, thumbH = 0, thumbY = TOP }
     if maxScroll > 0 then
         local thumbH = max(28, floor(view * view / (content - TOP)))
@@ -2025,9 +1932,6 @@ function Window:Refresh()
     self._dirty = false
 end
 
-----------------------------------------------------------------------
--- window input
-----------------------------------------------------------------------
 function Window:_contains(mx, my) return self.visible and inRect(mx, my, self.x, self.y, self.W, self.H) end
 
 function Window:_setQuery(q)
@@ -2048,7 +1952,6 @@ end
 
 function Window:_press(mx, my)
     local L = Library
-    -- search box
     if inRect(mx, my, self.x + self.W - 131, self.y + 10, 115, 30) then
         L:_focusInput({
             search = self, win = self, buf = self.query, max = 24,
@@ -2058,7 +1961,6 @@ function Window:_press(mx, my)
         self._dirty = true
         return true
     end
-    -- sidebar
     for _, sec in ipairs(self.sections) do
         if inRect(mx, my, self.x + 8, self.y + sec.sy, SW - 16, 24) then
             sec.collapsed = not sec.collapsed
@@ -2074,7 +1976,6 @@ function Window:_press(mx, my)
             end
         end
     end
-    -- scrollbar
     local sb = self.sb
     if sb and sb.max > 0 and inRect(mx, my, self.x + self.W - 18, self.y + sb.trackY, 16, sb.trackH) then
         local top = self.y + sb.thumbY
@@ -2083,7 +1984,6 @@ function Window:_press(mx, my)
         L._drag = { win = self, fn = function(_, y, phase) if phase ~= "release" then self:_scrollTo(y) end end }
         return true
     end
-    -- cards
     if my >= self.y + CLIP_T and my <= self.y + self.H - CLIP_B then
         for _, g in ipairs(self.view or {}) do
             local hd = g.holder
@@ -2113,7 +2013,6 @@ function Window:_press(mx, my)
             end
         end
     end
-    -- title bar drag
     if inRect(mx, my, self.x, self.y, self.W - 140, 56) then
         L._drag = { win = self, fn = function(x, y, phase)
             if phase == "drag" then
@@ -2159,9 +2058,6 @@ function Window:SetTitle(t, s)
     return self
 end
 
-----------------------------------------------------------------------
--- persistence
-----------------------------------------------------------------------
 local function ensureFolder(path)
     local acc = ""
     for part in string.gmatch(path, "[^/\\]+") do
@@ -2329,9 +2225,6 @@ function Window:Unload()
     if #Library.Windows == 0 then Library:Unload() end
 end
 
-----------------------------------------------------------------------
--- custom (named) themes
-----------------------------------------------------------------------
 local function themePath(self) return (self.folder or "ZeroUI") .. "/__themes.json" end
 
 function Window:_readThemes()
@@ -2354,7 +2247,6 @@ function Window:ListThemes()
     table.sort(out)
     return out
 end
--- saves the colours currently on screen under a name; returns ok, name-or-error
 function Window:SaveTheme(name)
     name = string.gsub(tostring(name or ""), "^%s+", "")
     name = string.gsub(name, "%s+$", "")
@@ -2383,9 +2275,6 @@ function Window:DeleteTheme(name)
     return true
 end
 
-----------------------------------------------------------------------
--- settings tab
-----------------------------------------------------------------------
 function Window:AddSettingsTab(name, section)
     local win = self
     local tab = self:AddTab(name or "settings", section or "hub")
@@ -2423,7 +2312,6 @@ function Window:AddSettingsTab(name, section)
     for _, role in ipairs(ROLE_LIST) do
         roleHandles[role] = th:AddColor({ text = labels[role], flag = "__c_" .. role, default = rgb2hex(Library.Roles[role]),
             callback = function(c)
-                -- ignore echoes while a preset is being applied
                 if win._themeSync then return end
                 Library:SetThemeColor(role, c)
             end })
@@ -2435,7 +2323,6 @@ function Window:AddSettingsTab(name, section)
         win._themeSync = false
     end
 
-    -- named themes: tweak the colours above, name them, save; apply or delete later
     local ct = tab:AddGroup("custom themes", 1)
     local tName = ct:AddTextbox({ text = "theme name", flag = "__themename", placeholder = "type a name",
         save = false, maxLength = 24, desc = "tweak the colors above, name it, then save" })
@@ -2478,7 +2365,6 @@ function Window:AddSettingsTab(name, section)
         mk.mode = "toggle"
         mk.onClick = nil
         mk:OnChanged(function() end)
-        -- the menu key is read from the handle, so rebinding takes effect immediately
         win._menuKeyHandle = mk
     end
     menu:AddSlider({ text = "cursor offset x", flag = "__curx", min = -80, max = 80, default = 0, suffix = "px",
@@ -2528,9 +2414,6 @@ function Window:AddSettingsTab(name, section)
     return tab
 end
 
-----------------------------------------------------------------------
--- main loop
-----------------------------------------------------------------------
 function Library:_ensureLoop()
     if self._loop or not RunService then return end
     local prevDown, prevR, lastErr = false, false, nil
@@ -2538,7 +2421,6 @@ function Library:_ensureLoop()
     self._loop = RunService.Heartbeat:Connect(function()
         local ok, err = pcall(function()
             local t = now()
-            -- menu key + deferred autoload
             for _, win in ipairs(self.Windows) do
                 if win._pendingLoad then
                     win._pendingLoad = false
@@ -2558,7 +2440,6 @@ function Library:_ensureLoop()
             self:_typeStep(t)
             self:_pollBinds(t)
 
-            -- buttons waiting for confirmation
             for _, win in ipairs(self.Windows) do
                 for _, h in ipairs(win.flagOrder) do if h.step then h:step(t) end end
             end
@@ -2576,7 +2457,6 @@ function Library:_ensureLoop()
 
                     if pop and pop.hover then pop.hover(mx, my) end
 
-                    -- wheel / page keys
                     local wheel = self._wheel
                     self._wheel = 0
                     local pgU, pgD = iskeypressed(0x21), iskeypressed(0x22)
@@ -2605,8 +2485,6 @@ function Library:_ensureLoop()
                         if pop then
                             if pop.press(mx, my) then handled = true
                             else
-                                -- outside click: close, and remember the owner so the same click
-                                -- on its opener doesn't immediately reopen it
                                 self._closedOwner, self._closedAt = pop.owner, now()
                                 self:_closePopup()
                             end
@@ -2621,7 +2499,6 @@ function Library:_ensureLoop()
                             end
                             if f and not (hit and f.search and inRect(mx, my, hit.x + hit.W - 131, hit.y + 10, 115, 30)) then self:_blur() end
                             if hit then
-                                -- bring to front
                                 for i, w in ipairs(self.Windows) do if w == hit then table.remove(self.Windows, i) break end end
                                 self.Windows[#self.Windows + 1] = hit
                                 hit:_press(mx, my)
@@ -2654,7 +2531,6 @@ function Library:_ensureLoop()
                         self._overWin = self._overWin or self.Windows[1]
                     end
 
-                    -- sidebar hover
                     if not down then
                         for _, win in ipairs(self.Windows) do
                             local hov
@@ -2676,7 +2552,6 @@ function Library:_ensureLoop()
                 end
             end
 
-            -- saves + redraw
             for _, win in ipairs(self.Windows) do
                 if win._saveAt and t >= win._saveAt and not self._drag then
                     win._saveAt = nil
