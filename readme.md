@@ -1,310 +1,480 @@
 # ZeroUI
 
-A menu library for **Matcha** (the external Roblox LuaVM). Everything is drawn with Matcha's `Drawing` API, so it works without `Instance.new`.
+ZeroUI is a UI library built for Matcha's LuaVM. It uses Matcha's `Drawing` API to render the interface without relying on Roblox instances.
 
-- Sidebar with sections and tabs, collapsible cards, two-column layout
-- Toggles, sliders, dropdowns (searchable, multi-select), color pickers, textboxes, keybinds, buttons, labels
-- Hub-wide search, themes (11 presets plus your own), font / opacity / outline settings
-- Saves every setting to a file, named configs, autoload
-- Typing in the menu does not reach the game (see [Input capture](#input-capture))
-- No dependencies, one file
+## Features
 
-> Current version: **1.0.11**. The library publishes itself as the global `_G.main`.
+- Sidebar navigation with tabs and sections
+- Collapsible groups with multi-column layouts
+- Toggles, sliders, dropdowns, color pickers, textboxes, keybinds, buttons, and labels
+- Searchable dropdowns with multi-select support
+- Built-in themes and custom theme support
+- Config saving, loading, and autoload
+- Custom fonts, opacity, and text outlines
+- Built-in settings tab
+- Input capture while interacting with the menu
+- No external dependencies
 
----
+**Current version:** `1.0.11`
 
-## Loading it
+## Installation
 
-Matcha drops the return value of a `loadstring` chunk, so the library puts itself in `_G.main`. Load it, then read the global:
+Load the library using its raw GitHub URL.
 
 ```lua
 local LIB_URL = "https://raw.githubusercontent.com/onlywraith/zero-inspired/refs/heads/main/main.lua"
 
-local function usable(t) return type(t) == "table" and not t._dead and type(t.CreateWindow) == "function" end
+local src = game:HttpGet(LIB_URL)
+loadstring(src)()
 
-local Library = rawget(_G, "main")
-if not usable(Library) then
-    _G.main = nil                                   -- drop a stale or half-loaded copy
-    local src
-    for _ = 1, 3 do                                 -- retry in case the request hiccups
-        local ok, res = pcall(function() return game:HttpGet(LIB_URL) end)
-        if ok and type(res) == "string" and #res > 1000 then src = res break end
-    end
-    if not src then warn("could not download the UI library") return end
+local Library = _G.main
 
-    local ok, err = pcall(function() local f = loadstring(src); f() end)
-    if not ok then warn("UI library failed to load: " .. tostring(err)) end
-    Library = rawget(_G, "main")
-    if not usable(Library) then return end
+if not Library or type(Library.CreateWindow) ~= "function" then
+    warn("Failed to load ZeroUI")
+    return
 end
 ```
 
-Replace the URL with the raw link to `main.lua` in your repo.
+ZeroUI is exposed through `_G.main` after loading.
 
-If `_G.main` already holds a live copy of the same version, it is reused. Running a different version replaces the old one.
-
----
-
-## Quick start
+## Quick Start
 
 ```lua
 local win = Library:CreateWindow({
-    title    = "my hub",
+    title = "My Hub",
     subtitle = "v1.0",
-    size     = { 822, 640 },
-    toggleKey = "RSHIFT",                -- opens / closes the menu
-    config   = "my_hub.json",            -- every setting is saved here
-    folder   = "UI/my_hub",              -- named configs live here
+    size = {822, 640},
+    toggleKey = "RSHIFT",
+    config = "my_hub.json",
+    folder = "UI/my_hub"
 })
 
-local tab  = win:AddTab("combat", "main")          -- tab name, sidebar section
-local card = tab:AddGroup("aim", 1)                -- card title, column (1 or 2)
+local tab = win:AddTab("Combat", "Main")
+local group = tab:AddGroup("Aimbot", 1)
 
-local aim = card:AddToggle({ text = "enable aim", flag = "aim_on", default = false })
-local fov = card:AddSlider({ text = "fov", flag = "aim_fov", min = 10, max = 360, default = 90, suffix = "°" })
+local aim = group:AddToggle({
+    text = "Enable Aimbot",
+    flag = "aim_enabled",
+    default = false
+})
 
-card:AddButton({ text = "say hello", callback = function() Library:Notify("hello") end })
+local fov = group:AddSlider({
+    text = "Field of View",
+    flag = "aim_fov",
+    min = 10,
+    max = 360,
+    default = 90,
+    suffix = "°"
+})
 
-win:AddSettingsTab()                             -- themes, configs, menu key, watermark ...
+group:AddButton({
+    text = "Test Notification",
+    callback = function()
+        Library:Notify("Hello!")
+    end
+})
 
--- read values anywhere with :Get()
-print(aim:Get(), fov:Get())
+win:AddSettingsTab()
+
+print(aim:Get())
+print(fov:Get())
 ```
 
-A complete, working example with an ESP is in [`example_esp.lua`](example_esp.lua).
+## Windows
 
----
+Create a window using `Library:CreateWindow(options)`.
 
-## Window
+| Option | Description | Default |
+|---|---|---|
+| `title` | Window title | `"zero hub"` |
+| `subtitle` | Subtitle | `""` |
+| `id` | Unique window identifier | Title |
+| `size` | Window dimensions | `{822, 640}` |
+| `columns` | Number of group columns (1–3) | `2` |
+| `toggleKey` | Menu toggle key | `"RSHIFT"` |
+| `config` | Settings file | None |
+| `folder` | Config and theme folder | None |
+| `autoload` | Load saved settings on startup | `true` |
+| `visible` | Initial visibility | `true` |
+| `x`, `y` | Window position | Centered |
+| `user` | Show player information | `true` |
+| `avatar` | Load player avatar | `true` |
+| `captureInput` | Control game input capture | `true` |
+| `onUnload` | Unload callback | None |
 
-```lua
-local win = Library:CreateWindow(options)
-```
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `title` | string | `"zero hub"` | Big title in the top-left of the sidebar |
-| `subtitle` | string | `""` | Small text under the title |
-| `id` | string | title | Unique name. Creating a window with an existing id replaces the old one |
-| `size` | `{w, h}` | `{822, 640}` | Window size in pixels |
-| `columns` | number (1-3) | `2` | Number of card columns |
-| `toggleKey` | string | `"RSHIFT"` | Key that shows / hides the menu |
-| `config` | string | none | File that every setting is saved to after each change |
-| `folder` | string | none | Folder for named configs (and saved themes) |
-| `autoload` | boolean | `true` | Load the saved settings when the window is created |
-| `visible` | boolean | `true` | Start shown or hidden |
-| `x`, `y` | number | centered | Window position |
-| `user` | boolean | `true` | Show the player name and avatar at the bottom of the sidebar. `false` hides both |
-| `avatar` | boolean | `true` | `false` skips downloading the avatar |
-| `captureInput` | boolean or function | `true` | See [Input capture](#input-capture) |
-| `onUnload` | function | none | Called when the window is destroyed |
-
-### Window methods
+### Window Methods
 
 | Method | Description |
 |---|---|
-| `win:AddSection(name)` | Add a sidebar section header |
-| `win:AddTab(name, section)` | Add a tab. Returns a tab |
-| `win:AddSettingsTab(name?, section?)` | Add the built-in settings tab (default name `settings`, section `hub`) |
-| `win:SelectTab(tabOrName)` | Switch to a tab |
-| `win:Show()` / `win:Hide()` / `win:Toggle()` | Show or hide the menu |
-| `win:IsVisible()` | Whether the menu is open |
-| `win:SetTitle(title, subtitle?)` | Change the title text |
-| `win:GetValue(flag)` / `win:SetValue(flag, value, silent?)` | Read or set a control by its `flag` |
-| `win:Refresh()` | Force a re-layout |
-| `win:SaveSettings()` / `win:LoadSettings()` | Write or read the file given as `config` |
-| `win:SaveConfig(name)` / `win:LoadConfig(name)` / `win:DeleteConfig(name)` | Named configs in `folder` |
-| `win:ListConfigs()` | List of saved config names |
-| `win:SetAutoload(name)` / `win:GetAutoload()` | Config that loads on start |
-| `win:ListThemes()` / `win:SaveTheme(name)` / `win:ApplyTheme(name)` / `win:DeleteTheme(name)` | Your own saved themes |
-| `win:ResetAll()` | Put every control back to its default |
-| `win:Destroy()` | Remove this window |
+| `win:AddSection(name)` | Add a sidebar section |
+| `win:AddTab(name, section)` | Create a tab |
+| `win:AddSettingsTab(name?, section?)` | Add the settings tab |
+| `win:SelectTab(tabOrName)` | Select a tab |
+| `win:Show()` | Show the window |
+| `win:Hide()` | Hide the window |
+| `win:Toggle()` | Toggle visibility |
+| `win:IsVisible()` | Check visibility |
+| `win:SetTitle(title, subtitle?)` | Update window title |
+| `win:GetValue(flag)` | Get a control value |
+| `win:SetValue(flag, value, silent?)` | Set a control value |
+| `win:Refresh()` | Refresh layout |
+| `win:SaveSettings()` | Save settings |
+| `win:LoadSettings()` | Load settings |
+| `win:SaveConfig(name)` | Save a named config |
+| `win:LoadConfig(name)` | Load a named config |
+| `win:DeleteConfig(name)` | Delete a config |
+| `win:ListConfigs()` | List saved configs |
+| `win:SetAutoload(name)` | Set startup config |
+| `win:GetAutoload()` | Get startup config |
+| `win:ListThemes()` | List saved themes |
+| `win:SaveTheme(name)` | Save current theme |
+| `win:ApplyTheme(name)` | Apply a theme |
+| `win:DeleteTheme(name)` | Delete a saved theme |
+| `win:ResetAll()` | Reset all controls |
+| `win:Destroy()` | Remove the window |
 
----
+## Tabs and Groups
 
-## Tabs and cards
+Tabs can be organized into sidebar sections and contain multiple groups.
 
 ```lua
-local tab = win:AddTab("combat", "main")
-local left  = tab:AddGroup("aim", 1)      -- column 1
-local right = tab:AddGroup("visuals", 2)  -- column 2
+local tab = win:AddTab("Combat", "Main")
+
+local left = tab:AddGroup("Aimbot", 1)
+local right = tab:AddGroup("Visuals", 2)
 ```
 
-- `tab:AddGroup(title, column, { collapsed = true })`, `tab:AddLeftGroup(title)`, `tab:AddRightGroup(title)`
-- Cards can be collapsed by clicking the header. `group:SetCollapsed(bool)`, `group:Toggle()`, `group:SetTitle(text)`
-- Tabs with the same `section` name are grouped under one sidebar header.
+Groups support collapsing and title changes.
 
----
+```lua
+group:SetCollapsed(true)
+group:Toggle()
+group:SetTitle("New Title")
+```
+
+You can also use:
+
+```lua
+tab:AddLeftGroup("Aimbot")
+tab:AddRightGroup("Visuals")
+```
 
 ## Controls
 
-Every control takes one table of options and returns a handle. Options shared by all controls:
+All controls use an options table and return a handle.
+
+### Shared Options
 
 | Option | Description |
 |---|---|
-| `text` | Label |
-| `flag` | Unique name. Controls with a flag are saved and loaded with the config |
-| `default` | Starting value |
-| `callback` | `function(value, handle)` called when the value changes |
-| `tooltip` / `desc` | Small description text under the control |
-| `badge` | A small tag next to the label: `"!"`, `"?"` or `"p"` show as `[!]`, `[?]`, `[p]`. Or give your own text, e.g. `{ text = "[new]" }` |
-| `depends` | Disable (and optionally hide) the control unless a condition holds. A handle, `{ handle, value }`, or a function returning a boolean |
-| `hideDisabled` | With `depends`: hide the control instead of greying it out |
-| `save` | `false` keeps the control out of config files |
-
-```lua
-local t = card:AddToggle({ text = "esp", flag = "esp", default = true })
-card:AddSlider({ text = "distance", flag = "dist", min = 0, max = 500, depends = t, hideDisabled = true })
-```
+| `text` | Control label |
+| `flag` | Unique identifier used for saving and retrieving values |
+| `default` | Initial value |
+| `callback` | Function called when the value changes |
+| `tooltip` / `desc` | Additional description |
+| `badge` | Small label displayed beside the control |
+| `depends` | Condition controlling whether the control is enabled |
+| `hideDisabled` | Hide disabled controls |
+| `save` | Set to `false` to exclude the control from configs |
 
 ### Toggle
+
 ```lua
-local h = card:AddToggle({ text = "name", flag = "x", default = false })
-h:AddKeybind({ flag = "x_key", default = "F4", mode = "toggle" })   -- small key box on the same row
-h:AddColor({ flag = "x_col", default = { 255, 0, 0 } })            -- small color swatch on the same row
+local toggle = group:AddToggle({
+    text = "Enable ESP",
+    flag = "esp",
+    default = false
+})
+```
+
+Toggles can have a keybind or color picker attached.
+
+```lua
+toggle:AddKeybind({
+    flag = "esp_key",
+    default = "F4",
+    mode = "toggle"
+})
+
+toggle:AddColor({
+    flag = "esp_color",
+    default = {255, 0, 0}
+})
 ```
 
 ### Slider
-| Option | Default | |
-|---|---|---|
-| `min`, `max` | 0, 100 | Range |
-| `step` | 1 | Increment (use `0.1` for decimals) |
-| `suffix` | `""` | Text after the number, e.g. `" studs"` |
 
-Click the number at the top right of a slider to type an exact value.
+```lua
+group:AddSlider({
+    text = "Distance",
+    flag = "distance",
+    min = 0,
+    max = 500,
+    step = 1,
+    default = 100,
+    suffix = " studs"
+})
+```
+
+Click the displayed value to enter a specific number.
 
 ### Dropdown
+
+```lua
+group:AddDropdown({
+    text = "Target",
+    flag = "target",
+    values = {"Player", "NPC", "Both"},
+    default = "Player",
+    multi = false
+})
+```
+
+Additional options:
+
 | Option | Description |
 |---|---|
-| `values` | Array of strings |
-| `multi` | `true` for multi-select. `:Get()` then returns a table of selected values |
+| `values` | Available entries |
+| `multi` | Enable multiple selections |
 | `allowNone` | Allow no selection |
 
-Lists with more than 6 entries get a search box. `handle:SetValues({...})` replaces the list.
+Dropdowns with more than six entries include a search field.
 
-### Color
+Use `handle:SetValues({...})` to update the available entries.
+
+### Color Picker
+
 ```lua
-local c = card:AddColor({ text = "color", flag = "col", default = { 255, 100, 0 } })   -- also accepts "#ff6400"
-c:Get()        -- Color3
-c:GetRGB()     -- r, g, b
-c:GetHex()     -- "#FF6400"
+local color = group:AddColor({
+    text = "ESP Color",
+    flag = "esp_color",
+    default = {255, 100, 0}
+})
 ```
+
+Hex colors are also supported.
+
+```lua
+color:Get()
+color:GetRGB()
+color:GetHex()
+```
+
+`Get()` returns a Color3 value.
 
 ### Textbox
+
+```lua
+group:AddTextbox({
+    text = "Username",
+    flag = "username",
+    placeholder = "Enter username",
+    maxLength = 20,
+    numeric = false,
+    live = false
+})
+```
+
 | Option | Description |
 |---|---|
-| `placeholder` | Grey text when empty |
-| `numeric` | Only accept numbers |
-| `maxLength` | Character limit |
-| `live` | Fire the callback on every keystroke instead of on Enter |
+| `placeholder` | Placeholder text |
+| `numeric` | Restrict input to numbers |
+| `maxLength` | Maximum character count |
+| `live` | Update callback on each keystroke |
 
 ### Keybind
-```lua
-local k = card:AddKeybind({ text = "menu key", flag = "key", default = "F4", mode = "toggle",
-    callback = function(state) print("bind is", state) end })
-```
-| Option | Description |
-|---|---|
-| `default` | Key name: `"F4"`, `"E"`, `"MB2"` ... |
-| `mode` | `"toggle"` (default), `"hold"` or `"always"`. Right-click the key box to cycle modes |
-| `notify` | Show a toast when the bind changes |
-| `list` | `false` hides it from the keybind list |
-| `onClick` | Called every time the key is pressed |
 
-`k:GetKey()`, `k:GetState()`, `k:SetMode(mode)`.
+```lua
+group:AddKeybind({
+    text = "Menu Key",
+    flag = "menu_key",
+    default = "F4",
+    mode = "toggle",
+    callback = function(state)
+        print(state)
+    end
+})
+```
+
+Supported modes:
+
+- `toggle`
+- `hold`
+- `always`
+
+Right-click the keybind to change its mode.
+
+Additional options include `notify`, `list`, and `onClick`.
+
+Keybind methods:
+
+```lua
+key:GetKey()
+key:GetState()
+key:SetMode("hold")
+```
 
 ### Button
-```lua
-card:AddButton({ text = "reset", confirm = true, callback = function() ... end })
-```
-`confirm = true` asks to click twice. `handle:SetText(text)` changes the label.
 
-### Label and divider
 ```lua
-local l = card:AddLabel({ text = "some info\nsecond line", dim = true })
-l:SetText("new text")      -- the label grows or shrinks to fit
-card:AddDivider()
+group:AddButton({
+    text = "Reset",
+    confirm = true,
+    callback = function()
+        print("Reset")
+    end
+})
 ```
-Text is word-wrapped, and `\n` starts a new line.
 
-### Handle methods
+Set `confirm = true` to require two clicks.
+
+Use `handle:SetText(text)` to change the button label.
+
+### Label and Divider
+
+```lua
+local label = group:AddLabel({
+    text = "Information",
+    dim = true
+})
+
+label:SetText("Updated information")
+
+group:AddDivider()
+```
+
+Labels support multiple lines and automatically adjust their height.
+
+## Control Methods
+
+All control handles support the following methods:
+
 | Method | Description |
 |---|---|
-| `:Get()` | Current value |
-| `:Set(value, silent?)` | Change the value. `silent = true` skips the callback |
-| `:OnChanged(fn)` | Add another listener |
-| `:Reset()` | Back to `default` |
-| `:SetText(text)` | Change the label |
-| `:SetVisible(bool)` / `:SetEnabled(bool)` | Hide or grey out |
+| `:Get()` | Get current value |
+| `:Set(value, silent?)` | Change value |
+| `:OnChanged(fn)` | Add a change listener |
+| `:Reset()` | Restore default value |
+| `:SetText(text)` | Change label |
+| `:SetVisible(bool)` | Show or hide control |
+| `:SetEnabled(bool)` | Enable or disable control |
 
----
-
-## Library functions
+## Library Methods
 
 ```lua
-Library:Notify("saved")                                                   -- toast
-Library:Notify({ title = "esp", text = "enabled", duration = 4 })
-Library:SetWatermark("my hub | v1")
+Library:Notify("Settings saved")
+
+Library:Notify({
+    title = "ESP",
+    text = "Enabled",
+    duration = 4
+})
+
+Library:SetWatermark("My Hub | v1")
 Library:SetWatermarkVisible(true)
-Library:SetKeybindList(true)               -- on-screen list of active binds
-Library:SetTheme("deep sea")               -- see themes below
-Library:SetThemeColor("accent", { 255, 80, 120 })
-Library:SetFont("Monospace", 13)           -- Library:FontNames() lists what is available
+
+Library:SetKeybindList(true)
+
+Library:SetTheme("deep sea")
+Library:SetThemeColor("accent", {255, 80, 120})
+
+Library:SetFont("Monospace", 13)
 Library:SetOpacity(0.9)
 Library:SetTextOutline(true)
-Library:OnUnload(function() ... end)       -- clean up your own drawings here
-Library:Unload()                           -- remove the whole UI
+
+Library:OnUnload(function()
+    -- Cleanup
+end)
+
+Library:Unload()
 ```
 
-Themes: `zero pink`, `monochrome`, `graphite`, `deep sea`, `rose noir`, `terminal`, `ultraviolet`, `obsidian`, `nordic`, `sakura`, `amber`. Theme roles you can change with `SetThemeColor`: `accent`, `background`, `group` (cards), `topbar` (sidebar), `border`, `text`.
+## Themes
 
----
+ZeroUI includes the following themes:
 
-## Settings tab
+- Zero Pink
+- Monochrome
+- Graphite
+- Deep Sea
+- Rose Noir
+- Terminal
+- Ultraviolet
+- Obsidian
+- Nordic
+- Sakura
+- Amber
 
-`win:AddSettingsTab()` adds a ready-made tab with:
+Theme colors can be customized using `SetThemeColor()`.
 
-- theme presets and your own saved themes
-- theme colors, font, font size, opacity, text outline
-- menu key, watermark, keybind list
-- config save / load / delete / autoload
-- cursor offset sliders (use them if clicks land slightly off the pointer)
-- unload button
+Available color properties:
 
----
+- `accent`
+- `background`
+- `group`
+- `topbar`
+- `border`
+- `text`
 
-## Input capture
+## Settings Tab
 
-While the menu is in use the game should not see your key presses. ZeroUI calls `setrobloxinput(false)` while:
+`win:AddSettingsTab()` adds a built-in settings page.
 
-- you type in a textbox, a dropdown search or a slider value
-- a keybind is waiting for a key
-- you drag something
-- the pointer is over the menu
+It includes:
 
-Game input comes back as soon as none of these apply, and when the UI unloads. It only changes input when that state flips, and never touches it until it needs to block.
+- Theme selection and customization
+- Font and font size
+- Opacity and text outline
+- Menu key configuration
+- Watermark settings
+- Keybind list
+- Config management
+- Autoload configuration
+- Cursor offset adjustments
+- Unload option
 
-If your script sends its own inputs and needs them to keep working, pass `captureInput` when you create the window:
+## Input Capture
+
+ZeroUI prevents menu interactions from being passed to the game while the menu is active.
+
+Input capture applies when:
+
+- Typing in textboxes
+- Searching dropdowns
+- Editing slider values
+- Selecting keybinds
+- Dragging interface elements
+- Hovering over the menu
+
+Game input is restored when the interaction ends or the UI unloads.
+
+To customize input capture, pass `captureInput` when creating the window.
 
 ```lua
-captureInput = function() return not State.running end   -- false = leave the game's input alone
+captureInput = function()
+    return not State.running
+end
 ```
 
-A function is called whenever the library checks; returning `false` turns blocking off at that moment. A plain `true` / `false` also works.
+Returning `false` disables input blocking.
 
----
+You can also pass a regular boolean instead of a function.
 
-## Notes for Matcha
+## Matcha Compatibility
 
-- Drawings are not part of the game tree. Remove your own with `:Remove()`, ideally from `Library:OnUnload(...)`, so re-running the script does not leave copies on screen.
-- Property writes on instances do not replicate in Matcha. That is a Matcha limit, not something the library works around.
-- Save files must end in `.json`, `.txt`, `.lua`, `.luau`, `.cfg`, `.dat` or `.ini` (Matcha's file API limit). The library uses `.json`.
+A few Matcha-specific limitations are worth noting:
 
----
+- Drawings are separate from the Roblox instance tree.
+- Custom drawings should be removed during cleanup to prevent duplicates.
+- Instance property changes do not replicate through Matcha.
+- Supported file extensions are `.json`, `.txt`, `.lua`, `.luau`, `.cfg`, `.dat`, and `.ini`.
 
-## Files
+ZeroUI uses `.json` for its configuration files.
 
-| File | |
+## Repository
+
+| File | Description |
 |---|---|
-| `main.lua` | The library |
-| `example_esp.lua` | Working example: a configurable ESP with boxes, names, distance, tracers and extra targets |
+| `main.lua` | ZeroUI library |
+| `example_esp.lua` | Example ESP implementation |
+
