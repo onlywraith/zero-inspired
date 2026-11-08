@@ -139,12 +139,16 @@ local DIM  = { text = "mute", sub = "mute", accent = "mute" }
 -- small helpers
 ----------------------------------------------------------------------
 local function wrapText(s, n)
-    local lines, cur = {}, ""
-    for word in string.gmatch(s or "", "%S+") do
-        if #cur > 0 and #cur + #word + 1 > n then lines[#lines + 1] = cur; cur = word
-        else cur = (#cur > 0) and (cur .. " " .. word) or word end
+    -- "\n" starts a new line; every line is word-wrapped to n characters
+    local lines = {}
+    for para in string.gmatch(tostring(s or "") .. "\n", "(.-)\n") do
+        local cur = ""
+        for word in string.gmatch(para, "%S+") do
+            if #cur > 0 and #cur + #word + 1 > n then lines[#lines + 1] = cur; cur = word
+            else cur = (#cur > 0) and (cur .. " " .. word) or word end
+        end
+        if #cur > 0 then lines[#lines + 1] = cur end
     end
-    if #cur > 0 then lines[#lines + 1] = cur end
     return lines
 end
 local function termsOf(q)
@@ -1642,6 +1646,16 @@ function Group:AddLabel(o)
     h.SetText = function(self, t)
         self.text = tostring(t)
         local ls = wrapText(self.text, floor((g.cw - 28) / (13 * 0.54)))
+        if #ls == 0 then ls = { "" } end
+        -- grow: add text lines the first text didn't need
+        for i = #parts + 1, #ls do
+            hd.curRow = row
+            parts[i] = hd:text(14, 2 + (i - 1) * 15, ls[i], 13, o.dim and "mute" or "sub", 6)
+            hd.curRow = nil
+        end
+        -- shrink / grow the row so there is no empty gap under short text
+        local want = #ls * 15 + 8
+        if row.h ~= want then row.h = want; if g.win then g.win._dirty = true end end
         for i, p in ipairs(parts) do hd:setText(p, ls[i] or "") end
         return self
     end
