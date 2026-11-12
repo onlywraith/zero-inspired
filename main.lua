@@ -1,4 +1,4 @@
-local VERSION = "1.0.11"
+local VERSION = "1.0.12"
 
 do
     local old = rawget(_G, "main")
@@ -240,7 +240,7 @@ end
 function Holder:image(x, y, w, h, z, data)
     local o = mkObj("Image", z + self.zb)
     setp(o, "Data", data); setp(o, "Size", Vector2.new(w, h)); setp(o, "Rounding", w / 2)
-    return self:_add({ o = o, kind = "image", x = x, y = y, h = h })
+    return self:_add({ o = o, kind = "image", x = x, y = y, w = w, h = h })
 end
 function Holder:setText(p, s)
     s = tostring(s)
@@ -257,14 +257,19 @@ function Holder:destroy()
     self.shown, self.vis = false, false
 end
 
-local function restyle(p)
+local function restyle(p, S)
     local o, L = p.o, Library
     if p.kind == "text" then
-        setTextSize(o, p.size + L.SizeDelta)
+        setTextSize(o, floor((p.size + L.SizeDelta) * S + .5))
         if L.FontObj ~= nil then setp(o, "Font", L.FontObj) end
         setp(o, "Outline", L.TextOutline)
         if p.cx and not p.native then p.x = p.cx - tw(p.s, p.size) / 2 end
         if p.right then p.x = p.right - tw(p.s, p.size) end
+    elseif p.kind == "circle" then
+        setp(o, "Radius", p.r * S)
+    elseif p.kind == "image" then
+        setp(o, "Size", Vector2.new(p.w * S, p.h * S))
+        setp(o, "Rounding", p.w / 2 * S)
     elseif p.fade then
         setp(o, "Transparency", L.Opacity)
     end
@@ -282,6 +287,10 @@ function Holder:sync()
     end
     self.vis = true
     local ct, cb, sv = self.clipTop, self.clipBot, L._sv
+    local win = self.win
+    local S = (win and win.scale) or 1
+    local ox, oy = 0, 0
+    if win then ox, oy = win.x, win.y end
     for _, p in ipairs(self.parts) do
         local o, row = p.o, p.row
         local show = p.on ~= false
@@ -291,7 +300,7 @@ function Holder:sync()
             ry, dim = row.y or 0, row.disabled
         end
         if show then
-            if p.sv ~= sv then restyle(p) end
+            if p.sv ~= sv then restyle(p, S) end
             local rl = p.role
             local col = p.color or L.C[(dim and DIM[rl]) or rl]
             if p.cc ~= col then o.Color = col; p.cc = col end
@@ -300,19 +309,23 @@ function Holder:sync()
                 local top, bot = ay, ay + p.h
                 if ct then top = max(top, ct); bot = min(bot, cb) end
                 if bot - top < 1 then show = false
-                else o.Position = Vector2.new(ax, top); o.Size = Vector2.new(p.w, bot - top) end
+                else
+                    o.Position = Vector2.new(ox + (ax - ox) * S, oy + (top - oy) * S)
+                    o.Size = Vector2.new(p.w * S, (bot - top) * S)
+                end
             elseif p.kind == "line" then
                 local ay2 = self.y + ry + p.y2
                 if ct and (min(ay, ay2) < ct or max(ay, ay2) > cb) then show = false end
-                o.From = Vector2.new(ax, ay); o.To = Vector2.new(self.x + p.x2, ay2)
+                o.From = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
+                o.To = Vector2.new(ox + (self.x + p.x2 - ox) * S, oy + (ay2 - oy) * S)
             elseif p.kind == "circle" then
                 if ct and (ay - p.r < ct or ay + p.r > cb) then show = false end
-                o.Position = Vector2.new(ax, ay)
+                o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
             else
                 local h = (p.kind == "text") and (p.size + 4) or (p.h or 0)
                 if ct and (ay < ct or ay + h > cb) then show = false end
                 if p.native then ay = ay + (p.size + L.SizeDelta + 4) / 2 end
-                o.Position = Vector2.new(ax, ay)
+                o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
             end
         end
         if p.vis ~= show then o.Visible = show; p.vis = show end
@@ -372,7 +385,7 @@ function Library:_closePopup()
 end
 
 local function popupBase(win, ax, ay, w, h)
-    local vw, vh = Library:_viewport()
+    local vw, vh = win:_vp()
     ax = clamp(ax, 4, max(4, vw - w - 4))
     if ay + h > vh - 4 then ay = max(4, vh - h - 4) end
     local hd = newHolder(win, 100)
@@ -392,7 +405,7 @@ function Library:_openDropdown(h, ax, ay, w)
     local top = searchable and SEARCH_H or 0
     local height = top + visN * ITEM + 4
     local oy = ay
-    if oy + height > select(2, self:_viewport()) - 4 then oy = ay - height - 28 end
+    if oy + height > select(2, win:_vp()) - 4 then oy = ay - height - 28 end
     local hd, px, py = popupBase(win, ax, oy, w, height)
     local pop = { win = win, holder = hd, owner = h, x = px, y = py, w = w, h = height, offset = 0, query = "", caret = true }
     local list = vals
@@ -842,9 +855,15 @@ function Library:CreateWindow(o)
         if self.Windows[i].id == id then self.Windows[i]:Destroy() end
     end
     local size = o.size or { 822, 640 }
+    local vw, vh = self:_viewport()
+    local sc = o.scale
+    if sc == nil and o.autoScale ~= false then sc = min(vw / 1920, vh / 1080) end
+    local fit = min(3, max(0.5, min(vw / size[1], vh / size[2])))
+    sc = clamp(floor((sc or 1) * 20 + .5) / 20, 0.5, fit)
     local win = setmetatable({
         id = id, title = o.title or "zero hub", subtitle = o.subtitle or "",
         W = size[1], H = size[2], columns = clamp(o.columns or 2, 1, 3),
+        scale = sc,
         toggleKey = o.toggleKey or "RSHIFT", configFile = o.config, folder = o.folder,
         visible = o.visible ~= false, onUnload = o.onUnload,
         captureInput = o.captureInput,
@@ -853,9 +872,8 @@ function Library:CreateWindow(o)
         collapsedGroups = {}, _prevKey = false,
     }, Window)
 
-    local vw, vh = self:_viewport()
-    win.x = o.x or max(0, floor((vw - win.W) / 2))
-    win.y = o.y or max(0, floor((vh - win.H) / 2))
+    win.x = o.x or max(0, floor((vw - win.W * sc) / 2))
+    win.y = o.y or max(0, floor((vh - win.H * sc) / 2))
     win.cardGap = 14
     win.contentX = SW + 14
     win.cardW = floor((win.W - win.contentX - 18 - (win.columns - 1) * win.cardGap) / win.columns)
@@ -880,13 +898,18 @@ function Library:CreateWindow(o)
     win.noResults = ch:text(win.contentX, TOP + 8, "no results.", 13, "mute", 6); win.noResults.on = false
     win.sbTrack = ch:rect(W - 12, TOP, 5, 100, "box", 4); win.sbTrack.on = false
     win.sbThumb = ch:rect(W - 12, TOP, 5, 30, "mute", 5); win.sbThumb.on = false
+    win.grip = {}
+    for i = 1, 3 do
+        local d = i * 4
+        win.grip[i] = ch:line(W - 5 - d, H - 5, W - 5, H - 5 - d, "mute", 9)
+    end
     if o.user ~= false then
         ch:rect(14, H - 62, SW - 28, 1, "line", 5)
         ch:circle(34, H - 32, 15, "box", 5, true)
         local uname = "player"
         pcall(function() uname = lp.Name end)
         win.uname = uname
-        ch:text(60, H - 40, string.sub(uname, 1, 2) .. string.rep("*", 9), 13, "text", 6)
+        win.unameP = ch:text(60, H - 40, string.sub(uname, 1, 2) .. string.rep("*", 9), 13, "text", 6)
     end
 
     self.Windows[#self.Windows + 1] = win
@@ -1917,6 +1940,9 @@ function Window:_layout()
         self.chrome:setText(self.searchTxt, s .. ((sf and L._blink) and "|" or " ")); self.searchTxt.role = "text"
     end
     self.searchBorder.role = sf and "accent" or "line"
+
+    local gr = (self._gripHot or self._resizing) and "accent" or "mute"
+    for _, p in ipairs(self.grip or {}) do p.role = gr end
 end
 
 function Window:Refresh()
@@ -1932,7 +1958,84 @@ function Window:Refresh()
     self._dirty = false
 end
 
-function Window:_contains(mx, my) return self.visible and inRect(mx, my, self.x, self.y, self.W, self.H) end
+function Window:_contains(mx, my)
+    return self.visible and inRect(mx, my, self.x, self.y, self.W * self.scale, self.H * self.scale)
+end
+
+-- screen (raw mouse) -> the unscaled layout space everything else uses
+function Window:_toLogical(mx, my)
+    local S = self.scale
+    return self.x + (mx - self.x) / S, self.y + (my - self.y) / S
+end
+-- screen size expressed in logical units (for popup clamping)
+function Window:_vp()
+    local vw, vh = Library:_viewport()
+    local S = self.scale
+    return self.x + (vw - self.x) / S, self.y + (vh - self.y) / S
+end
+function Library:_maxScale(win)
+    local vw, vh = self:_viewport()
+    return clamp(min(vw / win.W, vh / win.H), 0.5, 3)
+end
+
+-- keep = true: don't nudge the window back on-screen (used while dragging the grip)
+function Window:SetScale(s, keep)
+    s = tonumber(s)
+    if not s then return self end
+    s = clamp(floor(s * 20 + .5) / 20, 0.5, Library:_maxScale(self))
+    if s == self.scale then return self end
+    Library:_closePopup()
+    self.scale = s
+    if not keep then
+        local vw, vh = Library:_viewport()
+        if self.x + self.W * s > vw then self.x = max(0, vw - self.W * s) end
+        if self.y + self.H * s > vh then self.y = max(0, vh - self.H * s) end
+    end
+    Library._sv = Library._sv + 1          -- forces every part to restyle at the new size
+    self._dirty = true
+    if self._scaleHandle then pcall(function() self._scaleHandle:Set(floor(s * 100 + .5), true) end) end
+    if self.configFile then self._saveAt = now() + .75 end
+    return self
+end
+function Window:GetScale() return self.scale end
+
+-- the settings slider calls this: while a mouse button is held the change waits for release,
+-- otherwise the slider would move out from under the cursor while you drag it
+function Window:_requestScale(s)
+    if Library._drag or Library._inPress then self._pendingScale = s else self:SetScale(s) end
+end
+
+function Window:_startResize(rmx, rmy)
+    local L = Library
+    L:_closePopup(); L:_blur()
+    local gx = (self.x + self.W * self.scale) - rmx      -- where inside the grip you grabbed
+    local gy = (self.y + self.H * self.scale) - rmy
+    self._resizing = true
+    self._dirty = true
+    L._drag = { win = self, raw = true, fn = function(x, y, phase)
+        if phase == "release" then
+            self._resizing = false
+            self._dirty = true
+            return
+        end
+        local s = max((x + gx - self.x) / self.W, (y + gy - self.y) / self.H)
+        self:SetScale(s, true)
+    end }
+end
+
+function Window:SetShowUsername(b)
+    self.showName = b and true or false
+    if not self.unameP then return self end
+    local n = tostring(self.uname or "player")
+    local s
+    if self.showName then
+        s = (#n > 13) and (string.sub(n, 1, 12) .. ".") or n
+    else
+        s = string.sub(n, 1, 2) .. string.rep("*", 9)
+    end
+    self.chrome:setText(self.unameP, s)
+    return self
+end
 
 function Window:_setQuery(q)
     Library:_closePopup()
@@ -1950,8 +2053,12 @@ function Window:_scrollTo(my)
     self._dirty = true
 end
 
-function Window:_press(mx, my)
+function Window:_press(mx, my, rmx, rmy)    -- mx/my logical, rmx/rmy raw screen
     local L = Library
+    if inRect(mx, my, self.x + self.W - 22, self.y + self.H - 22, 20, 20) then
+        self:_startResize(rmx or mx, rmy or my)
+        return true
+    end
     if inRect(mx, my, self.x + self.W - 131, self.y + 10, 115, 30) then
         L:_focusInput({
             search = self, win = self, buf = self.query, max = 24,
@@ -2014,13 +2121,13 @@ function Window:_press(mx, my)
         end
     end
     if inRect(mx, my, self.x, self.y, self.W - 140, 56) then
-        L._drag = { win = self, fn = function(x, y, phase)
+        local dx, dy = (rmx or mx) - self.x, (rmy or my) - self.y
+        L._drag = { win = self, raw = true, fn = function(x, y, phase)
             if phase == "drag" then
-                self.x, self.y = x - self._wd.dx, y - self._wd.dy
+                self.x, self.y = x - dx, y - dy
                 self._dirty = true
             end
         end }
-        self._wd = { dx = mx - self.x, dy = my - self.y }
         L:_closePopup()
         return true
     end
@@ -2077,8 +2184,8 @@ function Window:_collect(withWindow)
     end
     local d = { flags = flags }
     if withWindow then
-        d.window = { x = self.x, y = self.y, tab = self.active and self.active.name, collapsed = self.collapsedGroups,
-            wm = Library._wmPos, kl = Library._klPos }
+        d.window = { x = self.x, y = self.y, scale = self.scale, tab = self.active and self.active.name,
+            collapsed = self.collapsedGroups, wm = Library._wmPos, kl = Library._klPos }
     end
     return d
 end
@@ -2125,7 +2232,12 @@ function Window:LoadSettings()
         self:_apply(d)
         local w = d.window
         if type(w) == "table" then
-            if type(w.x) == "number" and type(w.y) == "number" then self.x, self.y = w.x, w.y end
+            if type(w.scale) == "number" then self:SetScale(w.scale) end
+            if type(w.x) == "number" and type(w.y) == "number" then
+                local vw, vh = Library:_viewport()
+                self.x = clamp(w.x, 0, max(0, vw - self.W * self.scale))
+                self.y = clamp(w.y, 0, max(0, vh - self.H * self.scale))
+            end
             for _, k in ipairs({ "wm", "kl" }) do
                 local pp = w[k]
                 if type(pp) == "table" and type(pp.x) == "number" and type(pp.y) == "number" then
@@ -2305,6 +2417,11 @@ function Window:AddSettingsTab(name, section)
         callback = function(v) Library:SetWatermarkVisible(v) end })
     ui:AddToggle({ text = "keybind list", flag = "__keylist", default = false,
         callback = function(v) Library:SetKeybindList(v) end })
+    if win.unameP then
+        ui:AddToggle({ text = "show username", flag = "__showname", default = false,
+            desc = "unmask your name in the sidebar",
+            callback = function(v) win:SetShowUsername(v) end })
+    end
 
     local th = tab:AddGroup("theme colors", 1, { collapsed = true })
     local roleHandles = {}
@@ -2373,6 +2490,10 @@ function Window:AddSettingsTab(name, section)
     menu:AddSlider({ text = "cursor offset y", flag = "__cury", min = -80, max = 80, default = 0, suffix = "px",
         desc = "nudge if clicks land above or below the pointer",
         callback = function(v) Library.Settings.cursorOffset[2] = v end })
+    win._scaleHandle = menu:AddSlider({ text = "menu scale", flag = "__scale", min = 50, max = 250, step = 5,
+        default = floor(win.scale * 100 + .5), suffix = "%", save = false,
+        desc = "you can also drag the grip in the bottom corner. applies on release.",
+        callback = function(v) win:_requestScale(v / 100) end })
     menu:AddButton({ text = "reset hub settings", confirm = true, desc = "every toggle, slider and colour back to its default",
         callback = function() win:ResetAll() end })
     menu:AddButton({ text = "unload", confirm = true, callback = function() win:Unload() end })
@@ -2454,25 +2575,31 @@ function Library:_ensureLoop()
                     local down = ismouse1pressed()
                     local rdown = ismouse2pressed and ismouse2pressed() or false
                     local pop = self._popup
+                    local pmx, pmy = mx, my
+                    if pop and pop.win then pmx, pmy = pop.win:_toLogical(mx, my) end
 
-                    if pop and pop.hover then pop.hover(mx, my) end
+                    if pop and pop.hover then pop.hover(pmx, pmy) end
 
-                    local wheel = self._wheel
-                    self._wheel = 0
+                    -- wheel + PgUp/PgDn + arrow keys
+                    local dir = self:_readWheel()
                     local pgU, pgD = iskeypressed(0x21), iskeypressed(0x22)
-                    local dir = wheel
                     if pgU and not self._pgU then dir = dir - 2 end
                     if pgD and not self._pgD then dir = dir + 2 end
                     self._pgU, self._pgD = pgU, pgD
-                    if dir ~= 0 then
-                        if pop and inRect(mx, my, pop.x, pop.y, pop.w, pop.h) then
-                            pop.scroll(dir > 0 and 1 or -1)
+                    local keyStep = 0
+                    if not pop and not self._focus and not self._listen then
+                        if iskeypressed(0x26) then keyStep = keyStep - 12 end
+                        if iskeypressed(0x28) then keyStep = keyStep + 12 end
+                    end
+                    if dir ~= 0 or keyStep ~= 0 then
+                        if pop and inRect(pmx, pmy, pop.x, pop.y, pop.w, pop.h) then
+                            if dir ~= 0 then pop.scroll(dir > 0 and 1 or -1) end
                         else
                             for i = #self.Windows, 1, -1 do
                                 local win = self.Windows[i]
                                 if win:_contains(mx, my) then
-                                    self:_closePopup()
-                                    win.scroll = win.scroll + dir * 60
+                                    if dir ~= 0 then self:_closePopup() end
+                                    win.scroll = win.scroll + dir * 60 + keyStep
                                     win._dirty = true
                                     break
                                 end
@@ -2483,7 +2610,7 @@ function Library:_ensureLoop()
                     if down and not prevDown then
                         local handled = false
                         if pop then
-                            if pop.press(mx, my) then handled = true
+                            if pop.press(pmx, pmy) then handled = true
                             else
                                 self._closedOwner, self._closedAt = pop.owner, now()
                                 self:_closePopup()
@@ -2497,27 +2624,52 @@ function Library:_ensureLoop()
                                 local win = self.Windows[i]
                                 if win:_contains(mx, my) then hit = win break end
                             end
-                            if f and not (hit and f.search and inRect(mx, my, hit.x + hit.W - 131, hit.y + 10, 115, 30)) then self:_blur() end
+                            local hlx, hly
+                            if hit then hlx, hly = hit:_toLogical(mx, my) end
+                            if f and not (hit and f.search and inRect(hlx, hly, hit.x + hit.W - 131, hit.y + 10, 115, 30)) then self:_blur() end
                             if hit then
                                 for i, w in ipairs(self.Windows) do if w == hit then table.remove(self.Windows, i) break end end
                                 self.Windows[#self.Windows + 1] = hit
-                                hit:_press(mx, my)
+                                self._inPress = true
+                                local okp, perr = pcall(hit._press, hit, hlx, hly, mx, my)
+                                self._inPress = false
+                                assert(okp, perr)
                             end
                         end
                     elseif down then
-                        if self._drag then self._drag.fn(mx, my, "drag") end
+                        local d = self._drag
+                        if d then
+                            if d.win and not d.raw then
+                                local lx, ly = d.win:_toLogical(mx, my)
+                                d.fn(lx, ly, "drag")
+                            else
+                                d.fn(mx, my, "drag")
+                            end
+                        end
                     elseif prevDown then
                         local d = self._drag
                         self._drag = nil
-                        if d then d.fn(mx, my, "release") end
+                        if d then
+                            if d.win and not d.raw then
+                                local lx, ly = d.win:_toLogical(mx, my)
+                                d.fn(lx, ly, "release")
+                            else
+                                d.fn(mx, my, "release")
+                            end
+                        end
                         for _, win in ipairs(self.Windows) do
+                            if win._pendingScale then
+                                local s = win._pendingScale
+                                win._pendingScale = nil
+                                win:SetScale(s)
+                            end
                             if win._saveAt == nil and win.configFile then win._saveAt = t + .75 end
                         end
                     end
                     if rdown and not prevR then
                         for i = #self.Windows, 1, -1 do
                             local win = self.Windows[i]
-                            if win:_contains(mx, my) then win:_rpress(mx, my) break end
+                            if win:_contains(mx, my) then win:_rpress(win:_toLogical(mx, my)) break end
                         end
                     end
                     prevDown, prevR = down, rdown
@@ -2526,24 +2678,32 @@ function Library:_ensureLoop()
                         if win:_contains(mx, my) then self._overUI, self._overWin = true, win break end
                     end
                     local pp = self._popup
-                    if pp and inRect(mx, my, pp.x, pp.y, pp.w, pp.h) then
-                        self._overUI = true
-                        self._overWin = self._overWin or self.Windows[1]
+                    if pp and pp.win then
+                        local plx, ply = pp.win:_toLogical(mx, my)
+                        if inRect(plx, ply, pp.x, pp.y, pp.w, pp.h) then
+                            self._overUI = true
+                            self._overWin = self._overWin or self.Windows[1]
+                        end
                     end
 
                     if not down then
                         for _, win in ipairs(self.Windows) do
-                            local hov
+                            local hov, gripHot = nil, false
                             if win:_contains(mx, my) then
+                                local lx, ly = win:_toLogical(mx, my)
+                                gripHot = inRect(lx, ly, win.x + win.W - 22, win.y + win.H - 22, 20, 20)
                                 for _, sec in ipairs(win.sections) do
                                     if not sec.collapsed then
                                         for _, tab in ipairs(sec.tabs) do
-                                            if inRect(mx, my, win.x + 8, win.y + (tab.sy or -99), SW - 16, 32) then hov = tab end
+                                            if inRect(lx, ly, win.x + 8, win.y + (tab.sy or -99), SW - 16, 32) then hov = tab end
                                         end
                                     end
                                 end
                             end
-                            if hov ~= win._hoverTab then win._hoverTab = hov; win._dirty = true end
+                            if hov ~= win._hoverTab or gripHot ~= win._gripHot then
+                                win._hoverTab, win._gripHot = hov, gripHot
+                                win._dirty = true
+                            end
                         end
                     end
                 elseif not warnedMouse then
@@ -2573,6 +2733,22 @@ function Library:_ensureLoop()
     self._conns[#self._conns + 1] = self._loop
 end
 
+-- positive = scrolled up, negative = scrolled down (same sign as Roblox's Position.Z)
+function Library:SetWheelSource(fn)
+    self._wheelFn = type(fn) == "function" and fn or nil
+    return self
+end
+function Library:_readWheel()
+    local w = self._wheel
+    self._wheel = 0
+    local fn = self._wheelFn
+    if fn then
+        local ok, v = pcall(fn)
+        if ok and type(v) == "number" and v ~= 0 then w = w - v end
+    end
+    return w
+end
+
 function Library:_mouse()
     local m = self._mouseObj
     if not m then
@@ -2588,7 +2764,25 @@ function Library:_mouse()
                     local f, b = mm.WheelForward, mm.WheelBackward
                     if f then self._conns[#self._conns + 1] = f:Connect(function() self._wheel = self._wheel - 1 end) end
                     if b then self._conns[#self._conns + 1] = b:Connect(function() self._wheel = self._wheel + 1 end) end
+                    if f or b then self._wheelSrc = "mouse" end
                 end)
+                if not self._wheelSrc then
+                    pcall(function()
+                        local uis = game:GetService("UserInputService")
+                        local ev = uis and uis.InputChanged
+                        if ev and Enum and Enum.UserInputType then
+                            self._conns[#self._conns + 1] = ev:Connect(function(input)
+                                if input.UserInputType == Enum.UserInputType.MouseWheel then
+                                    self._wheel = self._wheel - ((input.Position.Z > 0) and 1 or -1)
+                                end
+                            end)
+                            self._wheelSrc = "uis"
+                        end
+                    end)
+                end
+                if not self._wheelSrc then
+                    warnOnce("wheel", "no mouse-wheel source found - use Up/Down/PgUp/PgDn, or main:SetWheelSource(fn)")
+                end
             end
         else
             return nil
