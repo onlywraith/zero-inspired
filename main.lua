@@ -1,4 +1,4 @@
-local VERSION = "1.0.12"
+local VERSION = "1.0.16"
 
 do
     local old = rawget(_G, "main")
@@ -18,7 +18,7 @@ local Library = {
     Settings = { cursorOffset = { 0, 0 } },
     Opacity = 1, TextOutline = false, TextSize = 13, SizeDelta = 0, FontName = "UI",
     PresetName = "zero pink",
-    _sv = 1, _objs = {}, _conns = {}, _toasts = {}, _unloadFns = {}, _wheel = 0, _dead = false,
+    _sv = 1, _objs = {}, _conns = {}, _toasts = {}, _unloadFns = {}, _dead = false,
 }
 _G.main = Library
 
@@ -1083,7 +1083,12 @@ local function descLines(g, o)
     return wrapText(d, floor((g.cw - 28) / (12 * 0.54)))
 end
 local function addDesc(g, lines, y)
-    for i, l in ipairs(lines) do g.holder:text(14, y + (i - 1) * 14, l, 12, "mute", 6) end
+    local row = g.holder.curRow
+    local parts = {}
+    for i, l in ipairs(lines) do parts[i] = g.holder:text(14, y + (i - 1) * 14, l, 12, "mute", 6) end
+    if row and #lines > 0 then
+        row.desc = { parts = parts, y = y, text = table.concat(lines, " "), base = row.h - #lines * 14 }
+    end
 end
 
 local function newHandle(g, row, kind, o)
@@ -1208,14 +1213,15 @@ function Group:AddSlider(o)
     h._same = function(a, b) return a == b end
     h._apply = function(self, v)
         local f = (mx > mn) and clamp((v - mn) / (mx - mn), 0, 1) or 0
-        fill.w = max(1, tracks * f)
-        knob.x = 14 + tracks * f
+        local tr = g.cw - 28
+        fill.w = max(1, tr * f)
+        knob.x = 14 + tr * f
         hd:setText(valP, fmtNum(v, step) .. suffix)
         self.win._dirty = true
     end
     h:_apply(h.value)
     local function setFromX(mxp)
-        local f = clamp((mxp - (hd.x + 14)) / tracks, 0, 1)
+        local f = clamp((mxp - (hd.x + 14)) / (g.cw - 28), 0, 1)
         h:Set(mn + f * (mx - mn))
     end
     h._hit = { x = 8, y = 18, w = g.cw - 16, h = 24, drag = true, fn = function(mxp, _, phase)
@@ -1280,7 +1286,7 @@ function Group:AddDropdown(o)
             for _, v in ipairs(self.values) do if self.value[v] then t[#t + 1] = tostring(v) end end
             s = (#t > 0) and table.concat(t, ", ") or "none"
         else s = tostring(self.value == nil and "none" or self.value) end
-        local maxc = floor((bw - 40) / (13 * 0.54))
+        local maxc = floor((g.cw - 28 - 40) / (13 * 0.54))
         if #s > maxc then s = string.sub(s, 1, maxc - 1) .. "." end
         hd:setText(valP, s)
     end
@@ -1321,7 +1327,7 @@ function Group:AddDropdown(o)
         if Library._closedOwner == h and t - (Library._closedAt or 0) < 0.25 then return end
         if #h.values == 0 then return end
         Library:_closePopup()
-        Library:_openDropdown(h, hd.x + 14, hd.y + row.y + 50, bw)
+        Library:_openDropdown(h, hd.x + 14, hd.y + row.y + 50, g.cw - 28)
     end }
     row.hits[1] = h._hit
     return h
@@ -2005,6 +2011,120 @@ function Window:_requestScale(s)
     if Library._drag or Library._inPress then self._pendingScale = s else self:SetScale(s) end
 end
 
+-- ---------------------------------------------------------------------------
+-- free-size resize: parts anchored to the right/bottom move, parts that span the
+-- middle stretch, everything else stays put
+-- ---------------------------------------------------------------------------
+local function reflowPartX(p, dw, half)
+    local k = p.kind
+    if k == "text" then
+        if p.right then
+            p.right = p.right + dw
+            p.x = p.right - tw(p.s, p.size)
+        elseif p.cx then
+            local d = 0
+            if math.abs(p.cx - half) <= 2 then d = dw / 2 elseif p.cx > half then d = dw end
+            p.cx = p.cx + d
+            p.x = p.native and p.cx or (p.cx - tw(p.s, p.size) / 2)
+        elseif p.x >= half then
+            p.x = p.x + dw
+        end
+    elseif k == "rect" then
+        if p.x >= half then p.x = p.x + dw
+        elseif p.x + p.w > half then p.w = p.w + dw end
+    elseif k == "circle" then
+        if p.x >= half then p.x = p.x + dw end
+    elseif k == "line" then
+        if p.x >= half then p.x = p.x + dw end
+        if p.x2 >= half then p.x2 = p.x2 + dw end
+    end
+end
+
+local function rewrapDesc(g, row)
+    local d = row.desc
+    if not d then return end
+    local ls = wrapText(d.text, floor((g.cw - 28) / (12 * 0.54)))
+    local hd = g.holder
+    for i = #d.parts + 1, #ls do
+        hd.curRow = row
+        d.parts[i] = hd:text(14, d.y + (i - 1) * 14, "", 12, "mute", 6)
+        hd.curRow = nil
+    end
+    for i, p in ipairs(d.parts) do
+        local t = ls[i]
+        if t then hd:setText(p, t); p.on = true else p.on = false end
+    end
+    row.h = d.base + #ls * 14
+end
+
+function Group:_reflow(newcw)
+    local dw = newcw - self.cw
+    if dw == 0 then return end
+    local half = self.cw / 2
+    for _, p in ipairs(self.holder.parts) do reflowPartX(p, dw, half) end
+    for _, row in ipairs(self.rows) do
+        for _, ht in ipairs(row.hits) do
+            if ht.x >= half then ht.x = ht.x + dw
+            elseif ht.x + ht.w > half then ht.w = ht.w + dw end
+        end
+    end
+    self.cw = newcw
+    for _, row in ipairs(self.rows) do
+        rewrapDesc(self, row)
+        local h = row.handle
+        if h then
+            if h.kind == "label" then h:SetText(h.text)
+            elseif h.kind == "slider" then h:_apply(h.value) end
+        end
+    end
+end
+
+function Window:_reflowChrome(oldW, oldH, dW, dH)
+    local hx, hy = oldW / 2, oldH / 2
+    for _, p in ipairs(self.chrome.parts) do
+        local k = p.kind
+        if k == "rect" or k == "image" then
+            if p.x >= hx then p.x = p.x + dW elseif p.x + p.w > hx then p.w = p.w + dW end
+            if p.y >= hy then p.y = p.y + dH elseif p.y + p.h > hy then p.h = p.h + dH end
+        elseif k == "line" then
+            if p.x >= hx then p.x = p.x + dW end
+            if p.x2 >= hx then p.x2 = p.x2 + dW end
+            if p.y >= hy then p.y = p.y + dH end
+            if p.y2 >= hy then p.y2 = p.y2 + dH end
+        else
+            if p.x >= hx then p.x = p.x + dW end
+            if p.y >= hy then p.y = p.y + dH end
+        end
+    end
+end
+
+function Window:SetSize(w, h)
+    w, h = tonumber(w), tonumber(h)
+    if not w or not h then return self end
+    local S = self.scale
+    local vw, vh = Library:_viewport()
+    local minW = self.contentX + 18 + self.columns * 200 + (self.columns - 1) * self.cardGap
+    local minH = 360
+    w = clamp(floor(w + .5), minW, max(minW, floor(vw / S)))
+    h = clamp(floor(h + .5), minH, max(minH, floor(vh / S)))
+    if w == self.W and h == self.H then return self end
+    Library:_closePopup()
+    local oldW, oldH = self.W, self.H
+    self:_reflowChrome(oldW, oldH, w - oldW, h - oldH)
+    self.W, self.H = w, h
+    local newcw = floor((w - self.contentX - 18 - (self.columns - 1) * self.cardGap) / self.columns)
+    if newcw ~= self.cardW then
+        self.cardW = newcw
+        for _, tab in ipairs(self.tabs) do
+            for _, g in ipairs(tab.groups) do g:_reflow(newcw) end
+        end
+    end
+    self._dirty = true
+    if self.configFile then self._saveAt = now() + .75 end
+    return self
+end
+function Window:GetSize() return self.W, self.H end
+
 function Window:_startResize(rmx, rmy)
     local L = Library
     L:_closePopup(); L:_blur()
@@ -2018,23 +2138,9 @@ function Window:_startResize(rmx, rmy)
             self._dirty = true
             return
         end
-        local s = max((x + gx - self.x) / self.W, (y + gy - self.y) / self.H)
-        self:SetScale(s, true)
+        local S = self.scale
+        self:SetSize((x + gx - self.x) / S, (y + gy - self.y) / S)
     end }
-end
-
-function Window:SetShowUsername(b)
-    self.showName = b and true or false
-    if not self.unameP then return self end
-    local n = tostring(self.uname or "player")
-    local s
-    if self.showName then
-        s = (#n > 13) and (string.sub(n, 1, 12) .. ".") or n
-    else
-        s = string.sub(n, 1, 2) .. string.rep("*", 9)
-    end
-    self.chrome:setText(self.unameP, s)
-    return self
 end
 
 function Window:_setQuery(q)
@@ -2184,7 +2290,7 @@ function Window:_collect(withWindow)
     end
     local d = { flags = flags }
     if withWindow then
-        d.window = { x = self.x, y = self.y, scale = self.scale, tab = self.active and self.active.name,
+        d.window = { x = self.x, y = self.y, w = self.W, h = self.H, scale = self.scale, tab = self.active and self.active.name,
             collapsed = self.collapsedGroups, wm = Library._wmPos, kl = Library._klPos }
     end
     return d
@@ -2233,6 +2339,7 @@ function Window:LoadSettings()
         local w = d.window
         if type(w) == "table" then
             if type(w.scale) == "number" then self:SetScale(w.scale) end
+            if type(w.w) == "number" and type(w.h) == "number" then self:SetSize(w.w, w.h) end
             if type(w.x) == "number" and type(w.y) == "number" then
                 local vw, vh = Library:_viewport()
                 self.x = clamp(w.x, 0, max(0, vw - self.W * self.scale))
@@ -2417,11 +2524,6 @@ function Window:AddSettingsTab(name, section)
         callback = function(v) Library:SetWatermarkVisible(v) end })
     ui:AddToggle({ text = "keybind list", flag = "__keylist", default = false,
         callback = function(v) Library:SetKeybindList(v) end })
-    if win.unameP then
-        ui:AddToggle({ text = "show username", flag = "__showname", default = false,
-            desc = "unmask your name in the sidebar",
-            callback = function(v) win:SetShowUsername(v) end })
-    end
 
     local th = tab:AddGroup("theme colors", 1, { collapsed = true })
     local roleHandles = {}
@@ -2492,7 +2594,7 @@ function Window:AddSettingsTab(name, section)
         callback = function(v) Library.Settings.cursorOffset[2] = v end })
     win._scaleHandle = menu:AddSlider({ text = "menu scale", flag = "__scale", min = 50, max = 250, step = 5,
         default = floor(win.scale * 100 + .5), suffix = "%", save = false,
-        desc = "you can also drag the grip in the bottom corner. applies on release.",
+        desc = "zooms the whole menu. drag the corner grip to resize freely. applies on release.",
         callback = function(v) win:_requestScale(v / 100) end })
     menu:AddButton({ text = "reset hub settings", confirm = true, desc = "every toggle, slider and colour back to its default",
         callback = function() win:ResetAll() end })
@@ -2580,8 +2682,8 @@ function Library:_ensureLoop()
 
                     if pop and pop.hover then pop.hover(pmx, pmy) end
 
-                    -- wheel + PgUp/PgDn + arrow keys
-                    local dir = self:_readWheel()
+                    -- PgUp/PgDn + arrow keys
+                    local dir = 0
                     local pgU, pgD = iskeypressed(0x21), iskeypressed(0x22)
                     if pgU and not self._pgU then dir = dir - 2 end
                     if pgD and not self._pgD then dir = dir + 2 end
@@ -2590,6 +2692,22 @@ function Library:_ensureLoop()
                     if not pop and not self._focus and not self._listen then
                         if iskeypressed(0x26) then keyStep = keyStep - 12 end
                         if iskeypressed(0x28) then keyStep = keyStep + 12 end
+                    end
+                    -- middle-mouse drag scrolls
+                    if iskeypressed(0x04) and not pop then
+                        if self._mLastY then
+                            for i = #self.Windows, 1, -1 do
+                                local win = self.Windows[i]
+                                if win:_contains(mx, my) then
+                                    win.scroll = win.scroll + (self._mLastY - my) / win.scale
+                                    win._dirty = true
+                                    break
+                                end
+                            end
+                        end
+                        self._mLastY = my
+                    else
+                        self._mLastY = nil
                     end
                     if dir ~= 0 or keyStep ~= 0 then
                         if pop and inRect(pmx, pmy, pop.x, pop.y, pop.w, pop.h) then
@@ -2733,22 +2851,6 @@ function Library:_ensureLoop()
     self._conns[#self._conns + 1] = self._loop
 end
 
--- positive = scrolled up, negative = scrolled down (same sign as Roblox's Position.Z)
-function Library:SetWheelSource(fn)
-    self._wheelFn = type(fn) == "function" and fn or nil
-    return self
-end
-function Library:_readWheel()
-    local w = self._wheel
-    self._wheel = 0
-    local fn = self._wheelFn
-    if fn then
-        local ok, v = pcall(fn)
-        if ok and type(v) == "number" and v ~= 0 then w = w - v end
-    end
-    return w
-end
-
 function Library:_mouse()
     local m = self._mouseObj
     if not m then
@@ -2758,32 +2860,6 @@ function Library:_mouse()
         if ok and mm then
             m = mm
             self._mouseObj = mm
-            if not self._wheelHooked then
-                self._wheelHooked = true
-                pcall(function()
-                    local f, b = mm.WheelForward, mm.WheelBackward
-                    if f then self._conns[#self._conns + 1] = f:Connect(function() self._wheel = self._wheel - 1 end) end
-                    if b then self._conns[#self._conns + 1] = b:Connect(function() self._wheel = self._wheel + 1 end) end
-                    if f or b then self._wheelSrc = "mouse" end
-                end)
-                if not self._wheelSrc then
-                    pcall(function()
-                        local uis = game:GetService("UserInputService")
-                        local ev = uis and uis.InputChanged
-                        if ev and Enum and Enum.UserInputType then
-                            self._conns[#self._conns + 1] = ev:Connect(function(input)
-                                if input.UserInputType == Enum.UserInputType.MouseWheel then
-                                    self._wheel = self._wheel - ((input.Position.Z > 0) and 1 or -1)
-                                end
-                            end)
-                            self._wheelSrc = "uis"
-                        end
-                    end)
-                end
-                if not self._wheelSrc then
-                    warnOnce("wheel", "no mouse-wheel source found - use Up/Down/PgUp/PgDn, or main:SetWheelSource(fn)")
-                end
-            end
         else
             return nil
         end
