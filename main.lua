@@ -1,4 +1,4 @@
-local VERSION = "1.0.14"
+local VERSION = "1.0.20"
 
 do
     local old = rawget(_G, "main")
@@ -324,7 +324,6 @@ function Holder:sync()
             else
                 local h = (p.kind == "text") and (p.size + 4) or (p.h or 0)
                 if ct and (ay < ct or ay + h > cb) then show = false end
-                if p.native then ay = ay + (p.size + L.SizeDelta + 4) / 2 end
                 o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
             end
         end
@@ -862,7 +861,7 @@ function Library:CreateWindow(o)
     sc = clamp(floor((sc or 1) * 20 + .5) / 20, 0.5, fit)
     local win = setmetatable({
         id = id, title = o.title or "zero hub", subtitle = o.subtitle or "",
-        W = size[1], H = size[2], columns = clamp(o.columns or 2, 1, 3),
+        W = size[1], H = size[2], baseW = size[1], baseH = size[2], columns = clamp(o.columns or 2, 1, 3),
         scale = sc,
         toggleKey = o.toggleKey or "RSHIFT", configFile = o.config, folder = o.folder,
         visible = o.visible ~= false, onUnload = o.onUnload,
@@ -1264,7 +1263,7 @@ function Group:AddDropdown(o)
     local bw = g.cw - 28
     hd:rect(14, 22, bw, 26, "line", 4)
     hd:rect(15, 23, bw - 2, 24, "box", 5)
-    local valP = hd:text(22, 28, "", 13, "text", 6)
+    local valP = hd:text(14 + bw / 2, 28.5, "", 13, "text", 6, { center = true })
     local cx = g.cw - 28
     local cd = { hd:line(cx - 4, 32, cx, 36, "mute", 6), hd:line(cx, 36, cx + 4, 32, "mute", 6) }
     addDesc(g, lines, 54)
@@ -1912,7 +1911,8 @@ function Window:_layout()
                     hd:setText(g.tag, g._tag)
                     g.tag.x = g.cw - 44 - tw(g._tag, 12)
                 end
-                hd.x = self.x + self.contentX + (g.dcol - 1) * (g.cw + self.cardGap)
+                local gap = self.columns > 1 and (self.W - self.contentX - 18 - self.columns * g.cw) / (self.columns - 1) or 0
+                hd.x = self.x + self.contentX + (g.dcol - 1) * (g.cw + gap)
                 hd.y = self.y + g.ry - self.scroll
                 hd.clipTop, hd.clipBot = self.y + CLIP_T, self.y + self.H - CLIP_B
             end
@@ -2009,11 +2009,37 @@ function Window:_requestScale(s)
     if Library._drag or Library._inPress then self._pendingScale = s else self:SetScale(s) end
 end
 
+function Window:_resize(w, h)
+    w, h = max(self.baseW, floor(w + .5)), max(260, floor(h + .5))
+    if w == self.W and h == self.H then return end
+    local oldW, oldH = self.W, self.H
+    local dx, dy = w - oldW, h - oldH
+    for _, p in ipairs(self.chrome.parts) do
+        if p.kind == "rect" then
+            if p.x == 0 and p.y == 0 and p.w == oldW and p.h == oldH then p.w, p.h = w, h
+            elseif p.x == 1 and p.y == 1 and p.w == oldW - 2 and p.h == oldH - 2 then p.w, p.h = w - 2, h - 2
+            elseif p.y == 1 and p.h == oldH - 2 and (p.x == 1 or p.x == SW + 1) then p.h = h - 2
+            else
+                if p.x >= oldW - 140 then p.x = p.x + dx end
+                if p.y >= oldH - 70 then p.y = p.y + dy end
+            end
+        elseif p.kind == "line" then
+            if p.x >= oldW - 140 then p.x, p.x2 = p.x + dx, p.x2 + dx end
+            if p.y >= oldH - 70 then p.y, p.y2 = p.y + dy, p.y2 + dy end
+        else
+            if p.x >= oldW - 140 then p.x = p.x + dx end
+            if p.y >= oldH - 70 then p.y = p.y + dy end
+        end
+    end
+    self.W, self.H = w, h
+    self._dirty = true
+    if self.configFile then self._saveAt = now() + .75 end
+end
+
 function Window:_startResize(rmx, rmy)
     local L = Library
     L:_closePopup(); L:_blur()
-    local gx = (self.x + self.W * self.scale) - rmx      -- where inside the grip you grabbed
-    local gy = (self.y + self.H * self.scale) - rmy
+    local startX, startY, startW, startH = rmx, rmy, self.W, self.H
     self._resizing = true
     self._dirty = true
     L._drag = { win = self, raw = true, fn = function(x, y, phase)
@@ -2022,8 +2048,10 @@ function Window:_startResize(rmx, rmy)
             self._dirty = true
             return
         end
-        local s = max((x + gx - self.x) / self.W, (y + gy - self.y) / self.H)
-        self:SetScale(s, true)
+        local vw, vh = L:_viewport()
+        local w = min(startW + (x - startX) / self.scale, max(self.baseW, (vw - self.x) / self.scale))
+        local h = min(startH + (y - startY) / self.scale, max(260, (vh - self.y) / self.scale))
+        self:_resize(w, h)
     end }
 end
 
@@ -2188,7 +2216,7 @@ function Window:_collect(withWindow)
     end
     local d = { flags = flags }
     if withWindow then
-        d.window = { x = self.x, y = self.y, scale = self.scale, tab = self.active and self.active.name,
+        d.window = { x = self.x, y = self.y, scale = self.scale, width = self.W, height = self.H, tab = self.active and self.active.name,
             collapsed = self.collapsedGroups, wm = Library._wmPos, kl = Library._klPos }
     end
     return d
@@ -2237,6 +2265,7 @@ function Window:LoadSettings()
         local w = d.window
         if type(w) == "table" then
             if type(w.scale) == "number" then self:SetScale(w.scale) end
+            if type(w.width) == "number" and type(w.height) == "number" then self:_resize(w.width, w.height) end
             if type(w.x) == "number" and type(w.y) == "number" then
                 local vw, vh = Library:_viewport()
                 self.x = clamp(w.x, 0, max(0, vw - self.W * self.scale))
