@@ -327,6 +327,8 @@ function Holder:sync()
                 local h = (p.kind == "text") and (p.size + L.SizeDelta + 4) or (p.h or 0)
                 if ct and (ay < ct or ay + h > cb) then show = false end
                 if p.native then ay = ay + (p.size + L.SizeDelta) / 4 end
+                -- Minecraft's pixel glyphs sit higher within their text area.
+                if p.cx and L.FontName == "Minecraft" then ay = ay + 2 end
                 o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
             end
         end
