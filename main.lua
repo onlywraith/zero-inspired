@@ -304,20 +304,21 @@ function Holder:sync()
             local rl = p.role
             local col = p.color or L.C[(dim and DIM[rl]) or rl]
             if p.cc ~= col then o.Color = col; p.cc = col end
-            local ax, ay = self.x + p.x, self.y + ry + p.y
+            local sx = self.group and self.win.cardW / self.group.cw or 1
+            local ax, ay = self.x + p.x * sx, self.y + ry + p.y
             if p.kind == "rect" then
                 local top, bot = ay, ay + p.h
                 if ct then top = max(top, ct); bot = min(bot, cb) end
                 if bot - top < 1 then show = false
                 else
                     o.Position = Vector2.new(ox + (ax - ox) * S, oy + (top - oy) * S)
-                    o.Size = Vector2.new(p.w * S, (bot - top) * S)
+                    o.Size = Vector2.new(p.w * sx * S, (bot - top) * S)
                 end
             elseif p.kind == "line" then
                 local ay2 = self.y + ry + p.y2
                 if ct and (min(ay, ay2) < ct or max(ay, ay2) > cb) then show = false end
                 o.From = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
-                o.To = Vector2.new(ox + (self.x + p.x2 - ox) * S, oy + (ay2 - oy) * S)
+                o.To = Vector2.new(ox + (self.x + p.x2 * sx - ox) * S, oy + (ay2 - oy) * S)
             elseif p.kind == "circle" then
                 if ct and (ay - p.r < ct or ay + p.r > cb) then show = false end
                 o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
@@ -1012,6 +1013,7 @@ function Tab:AddGroup(title, col, opts)
         collapsed = opts.collapsed == true }, Group)
     local hd = newHolder(win, 0)
     g.holder = hd
+    hd.group = g
     g.bg = hd:rect(0, 0, g.cw, 100, "card", 3)
     hd:circle(24, 18, 7, "accent", 5, false)
     hd:circle(24, 18, 2, "accent", 5, true)
@@ -1325,7 +1327,8 @@ function Group:AddDropdown(o)
         if Library._closedOwner == h and t - (Library._closedAt or 0) < 0.25 then return end
         if #h.values == 0 then return end
         Library:_closePopup()
-        Library:_openDropdown(h, hd.x + 14, hd.y + row.y + 50, bw)
+        local sx = g.win.cardW / g.cw
+        Library:_openDropdown(h, hd.x + 14 * sx, hd.y + row.y + 50, bw * sx)
     end }
     row.hits[1] = h._hit
     return h
@@ -1377,7 +1380,7 @@ function Library:_makeColor(g, row, o, swatch, rect)
         if Library._closedOwner == h and now() - (Library._closedAt or 0) < 0.25 then return end
         Library:_closePopup()
         local hd = g.holder
-        Library:_openColor(h, hd.x + rect.x - 160, hd.y + row.y + rect.y + rect.h + 4)
+        Library:_openColor(h, hd.x + rect.x * (g.win.cardW / g.cw) - 160, hd.y + row.y + rect.y + rect.h + 4)
     end }
     return h
 end
@@ -1925,7 +1928,7 @@ function Window:_layout()
                     hd:setText(g.tag, g._tag)
                     g.tag.x = g.cw - 44 - tw(g._tag, 12)
                 end
-                hd.x = self.x + self.contentX + (g.dcol - 1) * (g.cw + self.cardGap)
+                hd.x = self.x + self.contentX + (g.dcol - 1) * (self.cardW + self.cardGap)
                 hd.y = self.y + g.ry - self.scroll
                 hd.clipTop, hd.clipBot = self.y + CLIP_T, self.y + self.H - CLIP_B
             end
@@ -2038,6 +2041,7 @@ function Window:_resize(w, h)
         end
     end
     self.W, self.H = w, h
+    self.cardW = floor((w - self.contentX - 18 - (self.columns - 1) * self.cardGap) / self.columns)
     self._dirty = true
     if self.configFile then self._saveAt = now() + .75 end
 end
@@ -2045,7 +2049,7 @@ end
 function Window:_startResize(rmx, rmy)
     local L = Library
     L:_closePopup(); L:_blur()
-    local startX, startY, startScale = rmx, rmy, self.scale
+    local startX, startY, startW, startH = rmx, rmy, self.W, self.H
     self._resizing = true
     self._dirty = true
     L._drag = { win = self, raw = true, fn = function(x, y, phase)
@@ -2054,10 +2058,10 @@ function Window:_startResize(rmx, rmy)
             self._dirty = true
             return
         end
-        -- Scale the whole window so its controls, text and hitboxes resize together.
-        local delta = ((x - startX) * self.W + (y - startY) * self.H)
-            / (self.W * self.W + self.H * self.H)
-        self:SetScale(startScale + delta)
+        local vw, vh = L:_viewport()
+        local w = min(startW + (x - startX) / self.scale, max(self.baseW, (vw - self.x) / self.scale))
+        local h = min(startH + (y - startY) / self.scale, max(260, (vh - self.y) / self.scale))
+        self:_resize(w, h)
     end }
 end
 
@@ -2133,7 +2137,8 @@ function Window:_press(mx, my, rmx, rmy)    -- mx/my logical, rmx/rmy raw screen
     if my >= self.y + CLIP_T and my <= self.y + self.H - CLIP_B then
         for _, g in ipairs(self.view or {}) do
             local hd = g.holder
-            if inRect(mx, my, hd.x, hd.y, g.cw, g.dh) then
+            if inRect(mx, my, hd.x, hd.y, self.cardW, g.dh) then
+                local gx = hd.x + (mx - hd.x) * g.cw / self.cardW
                 if my <= hd.y + 36 then
                     g.collapsed = not g.collapsed
                     self.collapsedGroups[g.tab.name .. "/" .. g.title] = g.collapsed
@@ -2145,9 +2150,11 @@ function Window:_press(mx, my, rmx, rmy)    -- mx/my logical, rmx/rmy raw screen
                     for _, row in ipairs(g.rows) do
                         if row.vis and not row.disabled then
                             for _, ht in ipairs(row.hits) do
-                                if inRect(mx, my, hd.x + ht.x, hd.y + row.y + ht.y, ht.w, ht.h) then
-                                    ht.fn(mx, my, "press")
-                                    if ht.drag then L._drag = { fn = ht.fn, win = self } end
+                                if inRect(gx, my, hd.x + ht.x, hd.y + row.y + ht.y, ht.w, ht.h) then
+                                    ht.fn(gx, my, "press")
+                                    if ht.drag then L._drag = { win = self, fn = function(x, y, phase)
+                                        ht.fn(hd.x + (x - hd.x) * g.cw / self.cardW, y, phase)
+                                    end } end
                                     self._dirty = true
                                     return true
                                 end
@@ -2177,11 +2184,12 @@ function Window:_rpress(mx, my)
     if my < self.y + CLIP_T or my > self.y + self.H - CLIP_B then return end
     for _, g in ipairs(self.view or {}) do
         local hd = g.holder
-        if not g.collapsed and inRect(mx, my, hd.x, hd.y, g.cw, g.dh) then
+        if not g.collapsed and inRect(mx, my, hd.x, hd.y, self.cardW, g.dh) then
+            local gx = hd.x + (mx - hd.x) * g.cw / self.cardW
             for _, row in ipairs(g.rows) do
                 if row.vis then
                     for _, ht in ipairs(row.hits) do
-                        if ht.right and inRect(mx, my, hd.x + ht.x, hd.y + row.y + ht.y, ht.w, ht.h) then ht.right() return end
+                        if ht.right and inRect(gx, my, hd.x + ht.x, hd.y + row.y + ht.y, ht.w, ht.h) then ht.right() return end
                     end
                 end
             end
