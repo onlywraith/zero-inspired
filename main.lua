@@ -1264,7 +1264,7 @@ function Group:AddDropdown(o)
     local bw = g.cw - 28
     hd:rect(14, 22, bw, 26, "line", 4)
     hd:rect(15, 23, bw - 2, 24, "box", 5)
-    local valP = hd:text(14 + bw / 2, 28.5, "", 13, "text", 6, { center = true })
+    local valP = hd:text(22, 28.5, "", 13, "text", 6)
     local cx = g.cw - 28
     local cd = { hd:line(cx - 4, 32, cx, 36, "mute", 6), hd:line(cx, 36, cx + 4, 32, "mute", 6) }
     addDesc(g, lines, 54)
