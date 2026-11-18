@@ -1,4 +1,4 @@
-local VERSION = "1.0.20"
+local VERSION = "1.0.21"
 
 do
     local old = rawget(_G, "main")
@@ -18,7 +18,7 @@ local Library = {
     Settings = { cursorOffset = { 0, 0 } },
     Opacity = 1, TextOutline = false, TextSize = 13, SizeDelta = 0, FontName = "UI",
     PresetName = "zero pink",
-    _sv = 1, _objs = {}, _conns = {}, _toasts = {}, _unloadFns = {}, _wheel = 0, _dead = false,
+    _sv = 1, _objs = {}, _conns = {}, _toasts = {}, _unloadFns = {}, _dead = false,
 }
 _G.main = Library
 
@@ -2619,8 +2619,8 @@ function Library:_ensureLoop()
 
                     if pop and pop.hover then pop.hover(pmx, pmy) end
 
-                    -- wheel + PgUp/PgDn + arrow keys
-                    local dir = self:_readWheel()
+                    -- PgUp/PgDn + arrow keys
+                    local dir = 0
                     local pgU, pgD = iskeypressed(0x21), iskeypressed(0x22)
                     if pgU and not self._pgU then dir = dir - 2 end
                     if pgD and not self._pgD then dir = dir + 2 end
@@ -2772,22 +2772,6 @@ function Library:_ensureLoop()
     self._conns[#self._conns + 1] = self._loop
 end
 
--- positive = scrolled up, negative = scrolled down (same sign as Roblox's Position.Z)
-function Library:SetWheelSource(fn)
-    self._wheelFn = type(fn) == "function" and fn or nil
-    return self
-end
-function Library:_readWheel()
-    local w = self._wheel
-    self._wheel = 0
-    local fn = self._wheelFn
-    if fn then
-        local ok, v = pcall(fn)
-        if ok and type(v) == "number" and v ~= 0 then w = w - v end
-    end
-    return w
-end
-
 function Library:_mouse()
     local m = self._mouseObj
     if not m then
@@ -2797,32 +2781,6 @@ function Library:_mouse()
         if ok and mm then
             m = mm
             self._mouseObj = mm
-            if not self._wheelHooked then
-                self._wheelHooked = true
-                pcall(function()
-                    local f, b = mm.WheelForward, mm.WheelBackward
-                    if f then self._conns[#self._conns + 1] = f:Connect(function() self._wheel = self._wheel - 1 end) end
-                    if b then self._conns[#self._conns + 1] = b:Connect(function() self._wheel = self._wheel + 1 end) end
-                    if f or b then self._wheelSrc = "mouse" end
-                end)
-                if not self._wheelSrc then
-                    pcall(function()
-                        local uis = game:GetService("UserInputService")
-                        local ev = uis and uis.InputChanged
-                        if ev and Enum and Enum.UserInputType then
-                            self._conns[#self._conns + 1] = ev:Connect(function(input)
-                                if input.UserInputType == Enum.UserInputType.MouseWheel then
-                                    self._wheel = self._wheel - ((input.Position.Z > 0) and 1 or -1)
-                                end
-                            end)
-                            self._wheelSrc = "uis"
-                        end
-                    end)
-                end
-                if not self._wheelSrc then
-                    warnOnce("wheel", "no mouse-wheel source found - use Up/Down/PgUp/PgDn, or main:SetWheelSource(fn)")
-                end
-            end
         else
             return nil
         end
