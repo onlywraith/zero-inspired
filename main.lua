@@ -1,4 +1,4 @@
-local VERSION = "1.0.13"
+local VERSION = "1.0.14"
 
 do
     local old = rawget(_G, "main")
@@ -881,7 +881,7 @@ function Library:CreateWindow(o)
     local W, H = win.W, win.H
     local ch = newHolder(win, 0)
     win.chrome = ch
-    ch:rect(0, 0, W, H, "line", 1)
+    ch:rect(0, 0, W, H, "line", 0)
     ch:rect(1, 1, W - 2, H - 2, "win", 1)
     ch:rect(1, 1, SW, H - 2, "side", 2)
     ch:rect(SW + 1, 1, 1, H - 2, "line", 2)
