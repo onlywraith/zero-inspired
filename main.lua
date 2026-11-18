@@ -2045,7 +2045,7 @@ end
 function Window:_startResize(rmx, rmy)
     local L = Library
     L:_closePopup(); L:_blur()
-    local startX, startY, startW, startH = rmx, rmy, self.W, self.H
+    local startX, startY, startScale = rmx, rmy, self.scale
     self._resizing = true
     self._dirty = true
     L._drag = { win = self, raw = true, fn = function(x, y, phase)
@@ -2054,10 +2054,10 @@ function Window:_startResize(rmx, rmy)
             self._dirty = true
             return
         end
-        local vw, vh = L:_viewport()
-        local w = min(startW + (x - startX) / self.scale, max(self.baseW, (vw - self.x) / self.scale))
-        local h = min(startH + (y - startY) / self.scale, max(260, (vh - self.y) / self.scale))
-        self:_resize(w, h)
+        -- Scale the whole window so its controls, text and hitboxes resize together.
+        local delta = ((x - startX) * self.W + (y - startY) * self.H)
+            / (self.W * self.W + self.H * self.H)
+        self:SetScale(startScale + delta)
     end }
 end
 
