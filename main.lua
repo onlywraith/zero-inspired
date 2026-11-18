@@ -1,4 +1,4 @@
-local VERSION = "1.0.23"
+local VERSION = "1.0.24"
 
 do
     local old = rawget(_G, "main")
@@ -1833,17 +1833,26 @@ function Window:_layout()
     local terms = termsOf(self.query)
     local searching = #terms > 0
 
-    local y = 74
+    local sideBottom = max(75, self.H - (self.unameP and 70 or 8))
+    local sideHeight = 0
+    for _, sec in ipairs(self.sections) do
+        sideHeight = sideHeight + 36 + (sec.collapsed and 0 or #sec.tabs * 32)
+    end
+    self._sideMax = max(0, 74 + sideHeight - sideBottom)
+    self._sideScroll = clamp(self._sideScroll or 0, 0, self._sideMax)
+    local y = 74 - self._sideScroll
     local lastSec
     for _, sec in ipairs(self.sections) do
         sec.h.shown = vis
         sec.h.x, sec.h.y = self.x, self.y + y
+        sec.h.clipTop, sec.h.clipBot = self.y + 74, self.y + sideBottom
         sec.sy = y
         for _, p in ipairs(sec.chevDown) do p.on = not sec.collapsed end
         for _, p in ipairs(sec.chevRight) do p.on = sec.collapsed end
         y = y + 30
         for _, tab in ipairs(sec.tabs) do
             local it = tab.item
+            it.clipTop, it.clipBot = self.y + 74, self.y + sideBottom
             if sec.collapsed then it.shown = false
             else
                 it.shown, it.x, it.y, tab.sy = vis, self.x, self.y + y, y
@@ -2100,6 +2109,7 @@ function Window:_press(mx, my, rmx, rmy)    -- mx/my logical, rmx/rmy raw screen
         self._dirty = true
         return true
     end
+    if mx >= self.x and mx <= self.x + SW and (my < self.y + 74 or my > self.y + max(75, self.H - (self.unameP and 70 or 8))) then return true end
     for _, sec in ipairs(self.sections) do
         if inRect(mx, my, self.x + 8, self.y + sec.sy, SW - 16, 24) then
             sec.collapsed = not sec.collapsed
@@ -2638,7 +2648,12 @@ function Library:_ensureLoop()
                                 local win = self.Windows[i]
                                 if win:_contains(mx, my) then
                                     if dir ~= 0 then self:_closePopup() end
-                                    win.scroll = win.scroll + dir * 60 + keyStep
+                                    local lx = win:_toLogical(mx, my)
+                                    if lx < win.x + SW then
+                                        win._sideScroll = clamp((win._sideScroll or 0) + dir * 60 + keyStep, 0, win._sideMax or 0)
+                                    else
+                                        win.scroll = win.scroll + dir * 60 + keyStep
+                                    end
                                     win._dirty = true
                                     break
                                 end
