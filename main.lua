@@ -863,7 +863,7 @@ function Library:CreateWindow(o)
     local win = setmetatable({
         id = id, title = o.title or "zero hub", subtitle = o.subtitle or "",
         W = size[1], H = size[2], baseW = size[1], baseH = size[2], columns = clamp(o.columns or 2, 1, 3),
-        scale = sc,
+        scale = sc, defaultScale = sc,
         toggleKey = o.toggleKey or "RSHIFT", configFile = o.config, folder = o.folder,
         visible = o.visible ~= false, onUnload = o.onUnload,
         captureInput = o.captureInput,
@@ -1121,7 +1121,7 @@ local function inlineKeybind(h, o)
     local x = right - w
     local box = g.holder:rect(x, 3, w, 18, "line", 4)
     local fill = g.holder:rect(x + 1, 4, w - 2, 16, "box", 5)
-    local lab = g.holder:text(x + w / 2, 6, "", 12, "sub", 6, { center = true })
+    local lab = g.holder:text(x + w / 2, 8, "", 12, "sub", 6, { center = true })
     g.holder.curRow = nil
     h._inlineRight = x - 6
     h._inlineLeft = x
@@ -1524,7 +1524,7 @@ function Group:AddKeybind(o)
     local x = g.cw - 14 - w
     local box = hd:rect(x, 3, w, 18, "line", 4)
     local fill = hd:rect(x + 1, 4, w - 2, 16, "box", 5)
-    local kl = hd:text(x + w / 2, 6, "", 12, "sub", 6, { center = true })
+    local kl = hd:text(x + w / 2, 8, "", 12, "sub", 6, { center = true })
     addDesc(g, lines, 28)
     g:_endRow()
     local h = Library:_makeKeybind(g, row, o, { box = box, fill = fill, lab = kl, x = x, y = 3, w = w, h = 18 }, nil)
@@ -1542,7 +1542,7 @@ function Group:AddButton(o)
     local bw = g.cw - 28
     local border = hd:rect(14, 2, bw, 28, "line", 4)
     hd:rect(15, 3, bw - 2, 26, "box", 5)
-    local lab = hd:text(14 + bw / 2, 9, tostring(o.text or ""), 13, "text", 6, { center = true })
+    local lab = hd:text(14 + bw / 2, 11, tostring(o.text or ""), 13, "text", 6, { center = true })
     addDesc(g, lines, 36)
     g:_endRow()
     local h = newHandle(g, row, "button", o)
@@ -2006,17 +2006,10 @@ function Window:SetScale(s, keep)
     end
     Library._sv = Library._sv + 1          -- forces every part to restyle at the new size
     self._dirty = true
-    if self._scaleHandle then pcall(function() self._scaleHandle:Set(floor(s * 100 + .5), true) end) end
     if self.configFile then self._saveAt = now() + .75 end
     return self
 end
 function Window:GetScale() return self.scale end
-
--- the settings slider calls this: while a mouse button is held the change waits for release,
--- otherwise the slider would move out from under the cursor while you drag it
-function Window:_requestScale(s)
-    if Library._drag or Library._inPress then self._pendingScale = s else self:SetScale(s) end
-end
 
 function Window:_resize(w, h)
     w, h = max(self.baseW, floor(w + .5)), max(260, floor(h + .5))
@@ -2533,10 +2526,14 @@ function Window:AddSettingsTab(name, section)
     menu:AddSlider({ text = "cursor offset y", flag = "__cury", min = -80, max = 80, default = 0, suffix = "px",
         desc = "nudge if clicks land above or below the pointer",
         callback = function(v) Library.Settings.cursorOffset[2] = v end })
-    win._scaleHandle = menu:AddSlider({ text = "menu scale", flag = "__scale", min = 50, max = 250, step = 5,
-        default = floor(win.scale * 100 + .5), suffix = "%", save = false,
-        desc = "you can also drag the grip in the bottom corner. applies on release.",
-        callback = function(v) win:_requestScale(v / 100) end })
+    menu:AddButton({ text = "reset menu size", callback = function()
+        win:_resize(win.baseW, win.baseH)
+        win:SetScale(win.defaultScale)
+        local vw, vh = Library:_viewport()
+        win.x = clamp(win.x, 0, max(0, vw - win.W * win.scale))
+        win.y = clamp(win.y, 0, max(0, vh - win.H * win.scale))
+        win._dirty = true
+    end })
     menu:AddButton({ text = "reset hub settings", confirm = true, desc = "every toggle, slider and colour back to its default",
         callback = function() win:ResetAll() end })
     menu:AddButton({ text = "unload", confirm = true, callback = function() win:Unload() end })
@@ -2712,11 +2709,6 @@ function Library:_ensureLoop()
                             end
                         end
                         for _, win in ipairs(self.Windows) do
-                            if win._pendingScale then
-                                local s = win._pendingScale
-                                win._pendingScale = nil
-                                win:SetScale(s)
-                            end
                             if win._saveAt == nil and win.configFile then win._saveAt = t + .75 end
                         end
                     end
