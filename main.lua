@@ -322,7 +322,9 @@ function Holder:sync()
                 if ct and (ay - p.r < ct or ay + p.r > cb) then show = false end
                 o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
             else
-                local h = (p.kind == "text") and (p.size + 4) or (p.h or 0)
+                -- Keep each text anchor vertically centered as the global font size changes.
+                if p.kind == "text" then ay = ay - L.SizeDelta / 2 end
+                local h = (p.kind == "text") and (p.size + L.SizeDelta + 4) or (p.h or 0)
                 if ct and (ay < ct or ay + h > cb) then show = false end
                 if p.native then ay = ay + (p.size + L.SizeDelta) / 4 end
                 o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
