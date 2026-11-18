@@ -2284,7 +2284,7 @@ end
 function Window:DeleteConfig(name)
     return pcall(function() delfile(cfgPath(self, name)) end)
 end
-function Window:ListConfigs()
+function Window:ListConfigs()   
     local out = {}
     pcall(function()
         for _, p in ipairs(listfiles(self.folder or "ZeroUI")) do
