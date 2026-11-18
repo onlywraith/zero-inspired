@@ -1,4 +1,4 @@
-local VERSION = "1.0.21"
+local VERSION = "1.0.23"
 
 do
     local old = rawget(_G, "main")
@@ -324,6 +324,7 @@ function Holder:sync()
             else
                 local h = (p.kind == "text") and (p.size + 4) or (p.h or 0)
                 if ct and (ay < ct or ay + h > cb) then show = false end
+                if p.native then ay = ay + (p.size + L.SizeDelta) / 4 end
                 o.Position = Vector2.new(ox + (ax - ox) * S, oy + (ay - oy) * S)
             end
         end
@@ -1911,8 +1912,7 @@ function Window:_layout()
                     hd:setText(g.tag, g._tag)
                     g.tag.x = g.cw - 44 - tw(g._tag, 12)
                 end
-                local gap = self.columns > 1 and (self.W - self.contentX - 18 - self.columns * g.cw) / (self.columns - 1) or 0
-                hd.x = self.x + self.contentX + (g.dcol - 1) * (g.cw + gap)
+                hd.x = self.x + self.contentX + (g.dcol - 1) * (g.cw + self.cardGap)
                 hd.y = self.y + g.ry - self.scroll
                 hd.clipTop, hd.clipBot = self.y + CLIP_T, self.y + self.H - CLIP_B
             end
